@@ -1,0 +1,15 @@
+.env
+.env.local
+
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+node_modules/
+npm-debug.log
+yarn-error.log
+
+!misc.user.js

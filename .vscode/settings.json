@@ -1,0 +1,13 @@
+{
+	"[typescript]": {
+		"editor.defaultFormatter": "esbenp.prettier-vscode"
+	},
+	"[javascript]": {
+		"editor.defaultFormatter": "esbenp.prettier-vscode"
+	},
+	"editor.formatOnSave": true,
+	"eslint.workingDirectories": ["src"],
+	"files.autoSave": "onFocusChange",
+	"search.useIgnoreFiles": true,
+	"editor.defaultFormatter": "esbenp.prettier-vscode"
+}

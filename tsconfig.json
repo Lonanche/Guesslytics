@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "allowSyntheticDefaultImports": true,
+        "baseUrl": "src",
+        "lib": ["es6", "ES2021.String", "dom"],
+        "module": "ES6",
+        "moduleResolution": "Node",
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "target": "ES6",
+        "typeRoots": ["./node_modules/@types", "./src/types"]
+    },
+    "include": ["src/**/*", "scripts/**/*"]
+}
