@@ -1111,6 +1111,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"guesslytics@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "guesslytics@workspace:."
+  dependencies:
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@types/html-minifier-terser": "npm:^7"
+    "@types/node": "npm:^22.15.30"
+    chokidar: "npm:^4.0.3"
+    clean-css: "npm:^5.3.3"
+    dotenv: "npm:^17.0.1"
+    html-minifier-terser: "npm:^7.2.0"
+    oxlint: "npm:^1.1.0"
+    prepend-file: "npm:^2.0.1"
+    prettier: "npm:^3.5.3"
+    rolldown: "npm:1.0.0-beta.16"
+    ssh2-sftp-client: "npm:^12.0.1"
+    tslib: "npm:^2.8.1"
+    tsx: "npm:^4.19.4"
+    typescript: "npm:^5.8.3"
+  languageName: unknown
+  linkType: soft
+
 "html-minifier-terser@npm:^7.2.0":
   version: 7.2.0
   resolution: "html-minifier-terser@npm:7.2.0"
@@ -1885,28 +1907,6 @@ __metadata:
   checksum: 10/475f53e9c44375d6e72807284024ac5d668ee1d06010740dec0b9744f2ddf47de8d7151f80e5f6190fc8f384e802fdf9504b76a7e9020c9faee7103623338be2
   languageName: node
   linkType: hard
-
-"tampermonkey-template@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "tampermonkey-template@workspace:."
-  dependencies:
-    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
-    "@types/html-minifier-terser": "npm:^7"
-    "@types/node": "npm:^22.15.30"
-    chokidar: "npm:^4.0.3"
-    clean-css: "npm:^5.3.3"
-    dotenv: "npm:^17.0.1"
-    html-minifier-terser: "npm:^7.2.0"
-    oxlint: "npm:^1.1.0"
-    prepend-file: "npm:^2.0.1"
-    prettier: "npm:^3.5.3"
-    rolldown: "npm:1.0.0-beta.16"
-    ssh2-sftp-client: "npm:^12.0.1"
-    tslib: "npm:^2.8.1"
-    tsx: "npm:^4.19.4"
-    typescript: "npm:^5.8.3"
-  languageName: unknown
-  linkType: soft
 
 "tar@npm:^7.4.3":
   version: 7.4.3

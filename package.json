@@ -1,8 +1,8 @@
 {
-    "name": "tampermonkey-template",
+    "name": "guesslytics",
     "version": "0.1.0",
     "type": "module",
-    "description": "Template for creating Tampermonkey scripts - with Typescript and Rolldown",
+    "description": "Tracks your GeoGuessr competitive duel ratings over time and displays it in a graph",
     "scripts": {
         "build": "yarn lint && rolldown -c rolldown.config.ts && tsx ./scripts/build/build-patch.ts",
         "release": "yarn build && tsx ./scripts/release/release-ftp.ts",
@@ -34,9 +34,22 @@
     },
     "packageManager": "yarn@4.9.2",
     "tampermonkey": {
-        "author": "Harry Merritt",
-        "outputFile": "tampermonkey-rollup-template.user.js",
-        "updateURL": "https://raw.githubusercontent.com/hmerritt/tampermonkey-rollup-template/refs/heads/master/tampermonkey-rollup-template.user.js",
-        "downloadURL": "https://raw.githubusercontent.com/hmerritt/tampermonkey-rollup-template/refs/heads/master/tampermonkey-rollup-template.user.js"
+        "author": "Constructor",
+        "outputFile": "guesslytics.user.js",
+        "updateURL": "https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js",
+        "downloadURL": "https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js",
+        "namespace": "https://github.com/Avanatiker/Guesslytics",
+        "match": "https://www.geoguessr.com/multiplayer",
+        "connect": "game-server.geoguessr.com",
+        "grant": [
+            "GM_xmlhttpRequest",
+            "GM_setValue",
+            "GM_getValue",
+            "GM_addStyle"
+        ],
+        "require": [
+            "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js",
+            "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
+        ]
     }
 }
