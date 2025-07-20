@@ -1,60 +1,65 @@
 import { ChartDataset, ChartOptions, RatingHistory, Settings } from '../types';
-import { checkForUpdates } from './api';
 import { BACKFILL_STATE_KEY, DATASET_STYLES, ICONS } from './constants';
 import { formatDate, getStoredData, getUserId } from './utils';
 
-let ratingChart: any = null;
+// --- Module State ---
+let ratingChart: any = null; // The Chart.js instance.
 let isGraphExpanded = false;
 let refreshIntervalId: number | null = null;
 let countdownIntervalId: number | null = null;
-let isSyncing = false;
+
+// --- UI Update Functions ---
 
 /**
- * Set the sync state and update UI
+ * Sets the sync state and updates the UI to reflect it.
+ * Displays a spinner and a message during sync operations.
+ * @param syncing Whether the script is currently syncing data.
+ * @param text The text to display next to the sync indicator.
  */
 export function setSyncState(syncing: boolean, text: string = ''): void {
-    isSyncing = syncing;
     const statusEl = document.getElementById('guesslyticsStatus');
     const timerEl = document.getElementById('guesslyticsTimer');
     const resyncBtn = document.getElementById('guesslyticsResyncBtn') as HTMLButtonElement;
-    
+
     if (!statusEl || !timerEl || !resyncBtn) return;
 
-    resyncBtn.disabled = isSyncing;
-    
-    if (isSyncing) {
+    resyncBtn.disabled = syncing;
+
+    if (syncing) {
         if (countdownIntervalId) clearInterval(countdownIntervalId);
         timerEl.style.display = 'none';
         statusEl.innerHTML = `${text || 'Syncing...'} <div class="gg-spinner"></div>`;
     } else {
         statusEl.innerText = text;
-        const userId = getUserId();
-        
-        // Hide timer while status text is showing
+        // Hide the timer while the status text is showing, then clear the text after a delay.
         timerEl.style.display = 'none';
-        
-        // Wait for status text to be cleared before showing timer
         setTimeout(() => {
             if (statusEl && statusEl.innerText === text) {
                 statusEl.innerText = '';
             }
-            
-            // Start refresh cycle and show timer after status is cleared
-            if (userId) {
-                // This is a temporary fix - the actual settings and callback will be provided by the main script
-                startRefreshCycle(userId, { autoRefreshInterval: 60 } as any, async () => {});
-            }
+            // The refresh cycle will handle showing the timer again.
         }, 3000);
     }
 }
 
 /**
- * Set up the UI elements
+ * Sets up the main UI elements for the script.
+ * Injects the graph container and settings panel into the page.
+ * @param userId The current user's ID.
+ * @param settings The user's current settings.
+ * @param resyncCallback A callback function to trigger a manual data resync.
  */
-export function setupUI(userId: string | null, settings: Settings): void {
+export function setupUI(
+    userId: string,
+    settings: Settings,
+    resyncCallback: () => Promise<void>
+): void {
+    // Set the default font for all charts.
+    Chart.defaults.font.family = "'ggFont', sans-serif";
+
     const targetElement = document.querySelector('[class*="division-header_right"]');
     if (!targetElement || document.getElementById('guesslyticsContainer')) return;
-    
+
     const container = document.createElement('div');
     container.id = 'guesslyticsContainer';
     container.innerHTML = `
@@ -67,34 +72,36 @@ export function setupUI(userId: string | null, settings: Settings): void {
             </div>
         </div>
         <div id="graphWrapper"><div id="guesslyticsStats"></div><canvas id="guesslyticsCanvas"></canvas></div>`;
-    
+
     targetElement.innerHTML = '';
     targetElement.appendChild(container);
 
+    // Create a container for the settings panel if it doesn't exist.
     if (!document.getElementById('guesslyticsSettingsPanel')) {
         const settingsPanel = document.createElement('div');
         settingsPanel.id = 'guesslyticsSettingsPanel';
         document.body.appendChild(settingsPanel);
     }
 
+    // --- Attach Event Listeners ---
     document.getElementById('guesslyticsToggleBtn')!.onclick = () => {
         isGraphExpanded = !isGraphExpanded;
         container.classList.toggle('expanded', isGraphExpanded);
         document.getElementById('guesslyticsToggleBtn')!.innerHTML = isGraphExpanded ? ICONS.COLLAPSE : ICONS.EXPAND;
         document.getElementById('guesslyticsStats')!.style.display = isGraphExpanded ? 'flex' : 'none';
-        if(isGraphExpanded) calculateAndRenderStats();
+        if (isGraphExpanded) calculateAndRenderStats();
     };
-    
+
     document.getElementById('guesslyticsSettingsBtn')!.onclick = () => {
         document.getElementById('guesslyticsSettingsPanel')!.style.display = 'block';
         renderSettingsPanel(settings);
     };
-    
+
     document.getElementById('guesslyticsResyncBtn')!.onclick = async () => {
-        if (isSyncing || !userId) return;
-        await checkForUpdates(userId, true, settings.apiRequestDelay, setSyncState);
+        await resyncCallback();
     };
 
+    // Inject CSS styles into the page.
     GM_addStyle(`
         #guesslyticsContainer { display: flex; flex-direction: column; width: 100%; height: 210px; background: rgba(28,28,28,${settings.backgroundOpacity / 100}); border-radius: 8px; border: 1px solid #444; transition: height 0.3s ease, background-color 0.3s ease; box-sizing: border-box; }
         #guesslyticsContainer.expanded { height: 400px; }
@@ -115,8 +122,8 @@ export function setupUI(userId: string | null, settings: Settings): void {
         #guesslyticsSettingsModal h2 { margin-top: 0; text-align: center; }
         .settings-section { margin-bottom: 10px; } .settings-section h4 { font-size: 14px; margin: 0 0 8px; border-bottom: 1px solid #444; padding-bottom: 4px; }
         .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
-        #backfillDaysRow { display: flex; } /* Visible by default */
-        #backfillDaysRow.hidden { display: none !important; } /* Hide when given the hidden class */
+        #backfillDaysRow { display: flex; }
+        #backfillDaysRow.hidden { display: none !important; }
         .settings-row input { width: 60px; text-align: center; background: #333; border: 1px solid #555; color: #fff; border-radius: 4px; padding: 4px; }
         .settings-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #00BCD4; }
         .graph-toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; } .graph-toggle-item { display: flex; align-items: center; justify-content: space-between; }
@@ -127,63 +134,63 @@ export function setupUI(userId: string | null, settings: Settings): void {
         .settings-stats { font-size: 13px; color: #ccc; border-top: 1px solid #444; padding-top: 10px; margin-top: 10px; }
         .settings-footer { text-align: center; font-size: 11px; color: #888; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
         .settings-footer a { color: #aaa; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; } .settings-footer svg { width: 14px; height: 14px; }
-        /* Spinner */
         .gg-spinner { animation: gg-spinner 1s linear infinite; box-sizing: border-box; position: relative; display: block; transform: scale(var(--ggs,0.7)); width: 16px; height: 16px; border: 2px solid; border-top-color: transparent; border-radius: 50%; }
         @keyframes gg-spinner { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
     `);
 }
 
 /**
- * Calculate and render statistics
+ * Calculates and renders statistics based on the visible data in the chart.
+ * This is shown when the graph is expanded.
  */
 export async function calculateAndRenderStats(): Promise<void> {
     if (!isGraphExpanded || !ratingChart) return;
-    
+
     const statsEl = document.getElementById('guesslyticsStats');
     if (!statsEl) return;
-    
+
     const data = await getStoredData();
     const visibleMin = ratingChart.scales.x.min;
     const visibleMax = ratingChart.scales.x.max;
-    
-    const visibleData = data.overall.filter(d => { 
-        const ts = new Date(d.timestamp).getTime(); 
-        return ts >= visibleMin && ts <= visibleMax; 
+
+    const visibleData = data.overall.filter((d) => {
+        const ts = new Date(d.timestamp).getTime();
+        return ts >= visibleMin && ts <= visibleMax;
     });
-    
-    if (visibleData.length < 2) { 
-        statsEl.innerHTML = '<div class="stat-item"><div class="label">Not enough data in this view for stats</div></div>'; 
-        return; 
+
+    if (visibleData.length < 2) {
+        statsEl.innerHTML = '<div class="stat-item"><div class="label">Not enough data in this view for stats</div></div>';
+        return;
     }
-    
+
     const lastGame = visibleData[visibleData.length - 1];
     const secondLastGame = visibleData[visibleData.length - 2];
     const lastChange = lastGame.rating - secondLastGame.rating;
     const lastChangeEl = `<div class="value ${lastChange >= 0 ? 'positive' : 'negative'}">${lastChange >= 0 ? '+' : ''}${lastChange}</div>`;
-    
+
     let wins = 0, losses = 0, gains = 0, lossesTotal = 0, peakRating = visibleData[0].rating;
-    
+
     for (let i = 1; i < visibleData.length; i++) {
         const change = visibleData[i].rating - visibleData[i - 1].rating;
         if (change > 0) { wins++; gains += change; }
         if (change < 0) { losses++; lossesTotal += change; }
         if (visibleData[i].rating > peakRating) peakRating = visibleData[i].rating;
     }
-    
+
     const netChange = visibleData[visibleData.length - 1].rating - visibleData[0].rating;
     const totalGames = visibleData.length - 1;
     const avgNet = totalGames > 0 ? (netChange / totalGames).toFixed(2) : '0';
     const avgNetEl = `<div class="value ${Number(avgNet) >= 0 ? 'positive' : 'negative'}">${Number(avgNet) >= 0 ? '+' : ''}${avgNet}</div>`;
-    
-    const winRate = (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
+
+    const winRate = wins + losses > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
     let winRateClass = '';
     if (winRate > 50) winRateClass = 'positive';
     if (winRate < 50) winRateClass = 'negative';
     const winRateEl = `<div class="value ${winRateClass}">${winRate}%</div>`;
-    
+
     const avgGain = wins > 0 ? (gains / wins).toFixed(2) : '0';
     const avgLoss = losses > 0 ? (lossesTotal / losses).toFixed(2) : '0';
-    
+
     statsEl.innerHTML = `
         <div class="stat-item">${lastChangeEl}<div class="label">Last Change</div></div>
         <div class="stat-item">${avgNetEl}<div class="label">Avg. Net/Game</div></div>
@@ -194,28 +201,29 @@ export async function calculateAndRenderStats(): Promise<void> {
 }
 
 /**
- * Render the settings panel
+ * Renders the settings panel with the current settings and data stats.
+ * @param settings The user's current settings.
  */
 export async function renderSettingsPanel(settings: Settings): Promise<void> {
     const settingsPanel = document.getElementById('guesslyticsSettingsPanel');
     if (!settingsPanel) return;
-    
+
     const data = await getStoredData();
     const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null });
-    
+
     const stats = {
         points: data.overall.length,
         oldest: data.overall.length > 0 ? formatDate(data.overall[0].timestamp) : 'N/A',
         newest: data.overall.length > 0 ? formatDate(data.overall[data.overall.length - 1].timestamp) : 'N/A',
-        lastSync: formatDate(backfillState.lastSyncTimestamp)
+        lastSync: formatDate(backfillState.lastSyncTimestamp),
     };
-    
+
     settingsPanel.innerHTML = `
         <div id="guesslyticsSettingsOverlay"></div>
         <div id="guesslyticsSettingsModal">
             <h2>Guesslytics Settings</h2>
             <div class="settings-section"><h4>Graphs</h4>
-                <div class="graph-toggle-row">${Object.entries(DATASET_STYLES).map(([key, val]) => 
+                <div class="graph-toggle-row">${Object.entries(DATASET_STYLES).map(([key, val]) =>
                     `<div class="graph-toggle-item"><label for="ds_${key}" style="display:flex;align-items:center;">
                     <span class="color-swatch" style="background:${val.color};"></span>${val.label}</label>
                     <input type="checkbox" id="ds_${key}" data-key="${key}" ${settings.visibleDatasets[key as keyof typeof settings.visibleDatasets] ? 'checked' : ''}>
@@ -244,162 +252,131 @@ export async function renderSettingsPanel(settings: Settings): Promise<void> {
             <div class="settings-footer"><a href="https://github.com/Avanatiker/Guesslytics" target="_blank">
             ${ICONS.GITHUB} Guesslytics v${GM_info.script.version} by Constructor</a></div>
         </div>`;
-    
-    document.getElementById('guesslyticsSettingsOverlay')!.onclick = () => settingsPanel.style.display = 'none';
-    
-    // Set initial visibility of backfill days row based on backfillFullHistory setting
+
+    document.getElementById('guesslyticsSettingsOverlay')!.onclick = () => (settingsPanel.style.display = 'none');
+
+    // Toggle visibility of the backfill days input based on the full history checkbox.
     const backfillDaysRow = document.getElementById('backfillDaysRow');
     const fullHistoryCheck = document.getElementById('backfillFull') as HTMLInputElement;
-    
+
     if (backfillDaysRow && fullHistoryCheck) {
-        // Set initial visibility
-        if (settings.backfillFullHistory) {
-            backfillDaysRow.classList.add('hidden');
-        } else {
-            backfillDaysRow.classList.remove('hidden');
-        }
-        
-        // Add change handler for the fullHistoryCheck checkbox
-        fullHistoryCheck.onchange = () => { 
-            if (backfillDaysRow) {
-                if (fullHistoryCheck.checked) {
-                    backfillDaysRow.classList.add('hidden');
-                } else {
-                    backfillDaysRow.classList.remove('hidden');
-                }
-            }
-            // The saveAndRedraw function will be called by the event handler in index.ts
+        backfillDaysRow.style.display = settings.backfillFullHistory ? 'none' : 'flex';
+        fullHistoryCheck.onchange = () => {
+            backfillDaysRow.style.display = fullHistoryCheck.checked ? 'none' : 'flex';
         };
     }
-    
-    // Dispatch a custom event to signal that the settings panel has been rendered
-    // This allows index.ts to attach event handlers after the panel is rendered
-    const settingsRenderedEvent = new CustomEvent('guesslyticsSettingsRendered');
-    document.dispatchEvent(settingsRenderedEvent);
+
+    // Dispatch a custom event to signal that the settings panel has been rendered.
+    // This allows the main script to attach event handlers after the panel is in the DOM.
+    document.dispatchEvent(new CustomEvent('guesslyticsSettingsRendered'));
 }
 
 /**
- * Render the chart
+ * Renders the rating history chart.
+ * @param data The rating history data.
+ * @param settings The user's current settings.
  */
-export function renderGraph(data: RatingHistory, settings: Settings): void {
+export async function renderGraph(data: RatingHistory, settings: Settings): Promise<void> {
     const wasEmpty = !ratingChart || ratingChart.data.datasets.every((ds: ChartDataset) => ds.data.length === 0);
-    const currentZoom = (ratingChart && !wasEmpty) ? 
-        { min: ratingChart.scales.x.min, max: ratingChart.scales.x.max } : null;
-    
+    const currentZoom = ratingChart && !wasEmpty ? { min: ratingChart.scales.x.min, max: ratingChart.scales.x.max } : null;
+
     if (ratingChart) ratingChart.destroy();
-    
+
     const canvas = document.getElementById('guesslyticsCanvas') as HTMLCanvasElement;
     if (!canvas) return;
-    
+
     canvas.style.cursor = 'grab';
-    
-    const timestamps = data.overall.map(d => new Date(d.timestamp).getTime());
+
+    const timestamps = data.overall.map((d) => new Date(d.timestamp).getTime());
     const minTimestamp = data.overall.length > 0 ? Math.min(...timestamps) : null;
     const maxTimestamp = data.overall.length > 0 ? Math.max(...timestamps) : null;
-    
-    const datasets = Object.keys(DATASET_STYLES).map(key => {
-        const style = DATASET_STYLES[key];
+
+    const datasets = Object.keys(DATASET_STYLES).map((key) => {
+        const style = DATASET_STYLES[key as keyof typeof DATASET_STYLES];
         const gradient = canvas.getContext('2d')!.createLinearGradient(0, 0, 0, isGraphExpanded ? 400 : 210);
-        gradient.addColorStop(0, `${style.color}55`); 
+        gradient.addColorStop(0, `${style.color}55`);
         gradient.addColorStop(1, `${style.color}05`);
-        
+
         return {
-            label: style.label, 
-            data: data[key as keyof RatingHistory].map(d => ({ 
-                x: new Date(d.timestamp).getTime(), 
-                y: d.rating, 
-                gameId: d.gameId 
+            label: style.label,
+            data: data[key as keyof RatingHistory].map((d) => ({
+                x: new Date(d.timestamp).getTime(),
+                y: d.rating,
+                gameId: d.gameId,
             })),
-            borderColor: style.color, 
+            borderColor: style.color,
             borderWidth: key === 'overall' ? 2.5 : 2,
-            pointRadius: 0, 
-            pointHoverRadius: 6, 
-            pointHoverBorderColor: '#fff', 
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHoverBorderColor: '#fff',
             pointHoverBackgroundColor: style.color,
-            fill: settings.showAreaFill, 
-            backgroundColor: gradient, 
-            tension: 0, // Changed from 0.1 to 0 for linear interpolation to avoid tooltip issues
-            hidden: !settings.visibleDatasets[key as keyof typeof settings.visibleDatasets]
+            fill: settings.showAreaFill,
+            backgroundColor: gradient,
+            tension: 0,
+            hidden: !settings.visibleDatasets[key as keyof typeof settings.visibleDatasets],
         };
     });
-    
+
     let wasDragging = false;
-    
+
     const chartOptions: ChartOptions = {
-        animation: false, 
-        responsive: true, 
+        animation: false,
+        responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'x', intersect: false },
         onClick: (e, elements) => {
-            if (wasDragging) return;
-            if (elements.length > 0) {
-                const { datasetIndex, index } = elements[0];
-                const gameId = ratingChart.data.datasets[datasetIndex].data[index].gameId;
-                if (gameId) window.open(`https://www.geoguessr.com/duels/${gameId}`, '_blank');
-            }
+            if (wasDragging || elements.length === 0) return;
+            const { datasetIndex, index } = elements[0];
+            const gameId = ratingChart.data.datasets[datasetIndex].data[index].gameId;
+            if (gameId) window.open(`https://www.geoguessr.com/duels/${gameId}`, '_blank');
         },
-        plugins: { 
-            title: { display: false }, 
-            legend: { display: false }, 
-            tooltip: { 
-                position: 'nearest', 
-                callbacks: { 
-                    // Direct approach to handle tooltip labels
-                    // We'll use a custom formatter that completely replaces the default behavior
-                    // This ensures we have full control over what's displayed
+        plugins: {
+            title: { display: false },
+            legend: { display: false },
+            tooltip: {
+                position: 'nearest',
+                callbacks: {
                     title: (items) => formatDate(items[0].parsed.x),
-                    
-                    // Disable the default label formatter
                     label: () => null,
-                    
-                    // Use a custom formatter that builds the entire tooltip content
-                    // This gives us complete control over the output
                     afterBody: (tooltipItems) => {
-                        // Use a Set to track which datasets we've already processed
                         const processedDatasets = new Set();
-                        const lines = [];
-                        
-                        // Process each tooltip item
-                        tooltipItems.forEach(item => {
-                            // Only process each dataset once
+                        return tooltipItems.reduce((acc, item) => {
                             if (!processedDatasets.has(item.dataset.label)) {
                                 processedDatasets.add(item.dataset.label);
-                                lines.push(`${item.dataset.label}: ${item.parsed.y}`);
+                                acc.push(`${item.dataset.label}: ${item.parsed.y}`);
                             }
-                        });
-                        
-                        return lines;
-                    }
-                } 
-            }
+                            return acc;
+                        }, [] as string[]);
+                    },
+                },
+            },
         },
-        scales: { 
-            x: { 
-                type: 'time', 
-                time: { unit: 'day' }, 
-                ticks: { color: '#aaa' }, 
-                grid: { color: 'rgba(255,255,255,0.1)' } 
-            }, 
-            y: { 
-                ticks: { color: '#aaa' }, 
-                grid: { color: 'rgba(255,255,255,0.1)' } 
-            } 
-        }
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: 'day' },
+                ticks: { color: '#aaa' },
+                grid: { color: 'rgba(255,255,255,0.1)' },
+            },
+            y: {
+                ticks: { color: '#aaa' },
+                grid: { color: 'rgba(255,255,255,0.1)' },
+            },
+        },
     };
-    
+
     if (currentZoom?.min && currentZoom?.max) {
         chartOptions.scales.x.min = currentZoom.min;
         chartOptions.scales.x.max = currentZoom.max;
-    } else if (data.overall.length >= 1) {
-        const lastTimestamp = data.overall.length > 0 ? 
-            new Date(data.overall[data.overall.length - 1].timestamp).getTime() : Date.now();
+    } else if (data.overall.length > 0) {
+        const lastTimestamp = new Date(data.overall[data.overall.length - 1].timestamp).getTime();
         const minZoomDate = new Date(lastTimestamp);
         minZoomDate.setDate(minZoomDate.getDate() - (settings.initialZoomDays || 7));
         chartOptions.scales.x.min = minZoomDate.getTime();
         chartOptions.scales.x.max = lastTimestamp;
     }
-    
-    // Chart.js crosshair plugin
+
+    // A simple Chart.js plugin to draw a vertical line on the chart that follows the tooltip.
     const crosshairLinePlugin = {
         id: 'crosshairLine',
         afterDatasetsDraw: (chart: any) => {
@@ -415,137 +392,131 @@ export function renderGraph(data: RatingHistory, settings: Settings): void {
                 ctx.stroke();
                 ctx.restore();
             }
-        }
+        },
     };
-    
-    ratingChart = new Chart(canvas, { 
-        type: 'line', 
-        data: { datasets }, 
-        options: chartOptions, 
-        plugins: [crosshairLinePlugin] 
+
+    ratingChart = new Chart(canvas, {
+        type: 'line',
+        data: { datasets },
+        options: chartOptions,
+        plugins: [crosshairLinePlugin],
     });
-    
-    // Pan and zoom functionality
+
+    // --- Pan and Zoom Functionality ---
     let isPanning = false, lastX = 0, startX = 0;
-    
-    const onPanEnd = () => { 
-        if (!isPanning) return; 
-        isPanning = false; 
-        canvas.style.cursor = 'grab'; 
-        if (isGraphExpanded) calculateAndRenderStats(); 
-        setTimeout(() => wasDragging = false, 50); 
+
+    const onPanEnd = () => {
+        if (!isPanning) return;
+        isPanning = false;
+        canvas.style.cursor = 'grab';
+        if (isGraphExpanded) calculateAndRenderStats();
+        setTimeout(() => (wasDragging = false), 50);
     };
-    
-    canvas.onmousedown = (e) => { 
-        isPanning = true; 
-        lastX = e.clientX; 
-        startX = e.clientX; 
-        wasDragging = false; 
-        canvas.style.cursor = 'grabbing'; 
+
+    canvas.onmousedown = (e) => {
+        isPanning = true;
+        lastX = e.clientX;
+        startX = e.clientX;
+        wasDragging = false;
+        canvas.style.cursor = 'grabbing';
     };
-    
+
     canvas.onmouseup = onPanEnd;
     canvas.onmouseleave = onPanEnd;
-    
+
     canvas.onmousemove = (e) => {
-        if (isPanning) {
-            if (Math.abs(e.clientX - startX) > 5) wasDragging = true;
-            const deltaX = e.clientX - lastX;
-            lastX = e.clientX;
-            const scales = ratingChart.scales.x;
-            let newMin = scales.min - (scales.max - scales.min) * (deltaX / scales.width);
-            let newMax = scales.max - (scales.max - scales.min) * (deltaX / scales.width);
-            
-            if (data.overall.length > 1) {
-                if (newMin < minTimestamp) { 
-                    const diff = minTimestamp - newMin; 
-                    newMin += diff; 
-                    newMax += diff; 
-                }
-                if (newMax > maxTimestamp) { 
-                    const diff = newMax - maxTimestamp; 
-                    newMin -= diff; 
-                    newMax -= diff; 
-                }
+        if (!isPanning) return;
+        if (Math.abs(e.clientX - startX) > 5) wasDragging = true;
+        const deltaX = e.clientX - lastX;
+        lastX = e.clientX;
+        const { scales } = ratingChart;
+        let newMin = scales.x.min - (scales.x.max - scales.x.min) * (deltaX / scales.x.width);
+        let newMax = scales.x.max - (scales.x.max - scales.x.min) * (deltaX / scales.x.width);
+
+        if (data.overall.length > 1 && minTimestamp && maxTimestamp) {
+            if (newMin < minTimestamp) {
+                const diff = minTimestamp - newMin;
+                newMin += diff;
+                newMax += diff;
             }
-            
-            ratingChart.options.scales.x.min = newMin;
-            ratingChart.options.scales.x.max = newMax;
-            ratingChart.update('none');
+            if (newMax > maxTimestamp) {
+                const diff = newMax - maxTimestamp;
+                newMin -= diff;
+                newMax -= diff;
+            }
         }
-    };
-    
-    canvas.onwheel = (e) => {
-        e.preventDefault();
-        const zoomFactor = e.deltaY < 0 ? 0.85 : 1.15;
-        const scales = ratingChart.scales.x;
-        const mouseTimestamp = scales.getValueForPixel(e.offsetX);
-        let newMin = mouseTimestamp - (mouseTimestamp - scales.min) * zoomFactor;
-        let newMax = mouseTimestamp + (scales.max - mouseTimestamp) * zoomFactor;
-        
-        if (data.overall.length > 1) {
-            if (newMin < minTimestamp) newMin = minTimestamp;
-            if (newMax > maxTimestamp) newMax = maxTimestamp;
-        }
-        
-        if (newMax - newMin < 1000 * 60 * 5) return;
-        
+
         ratingChart.options.scales.x.min = newMin;
         ratingChart.options.scales.x.max = newMax;
         ratingChart.update('none');
-        
-        if(isGraphExpanded) calculateAndRenderStats();
     };
-    
-    if(isGraphExpanded) calculateAndRenderStats();
+
+    canvas.onwheel = (e) => {
+        e.preventDefault();
+        const zoomFactor = e.deltaY < 0 ? 0.85 : 1.15;
+        const { scales } = ratingChart;
+        const mouseTimestamp = scales.x.getValueForPixel(e.offsetX);
+        let newMin = mouseTimestamp - (mouseTimestamp - scales.x.min) * zoomFactor;
+        let newMax = mouseTimestamp + (scales.x.max - mouseTimestamp) * zoomFactor;
+
+        if (data.overall.length > 1 && minTimestamp && maxTimestamp) {
+            if (newMin < minTimestamp) newMin = minTimestamp;
+            if (newMax > maxTimestamp) newMax = maxTimestamp;
+        }
+
+        if (newMax - newMin < 1000 * 60 * 5) return; // Minimum zoom level of 5 minutes
+
+        ratingChart.options.scales.x.min = newMin;
+        ratingChart.options.scales.x.max = newMax;
+        ratingChart.update('none');
+        if (isGraphExpanded) calculateAndRenderStats();
+    };
+
+    if (isGraphExpanded) calculateAndRenderStats();
 }
 
 /**
- * Start the refresh cycle
+ * Starts the automatic refresh cycle to check for new games.
+ * @param settings The user's current settings.
+ * @param checkForUpdatesCallback The function to call to check for updates.
  */
 export function startRefreshCycle(
-    userId: string | null,
     settings: Settings,
-    checkForUpdatesCallback: (userId: string, isManual: boolean) => Promise<void>
+    checkForUpdatesCallback: () => Promise<void>
 ): void {
     if (refreshIntervalId) clearInterval(refreshIntervalId);
     if (countdownIntervalId) clearInterval(countdownIntervalId);
-    
-    if (!userId || settings.autoRefreshInterval <= 0 || isSyncing) {
+
+    const userId = getUserId();
+    if (!userId || settings.autoRefreshInterval <= 0) {
         const timerEl = document.getElementById('guesslyticsTimer');
-        if(timerEl) timerEl.style.display = 'none';
+        if (timerEl) timerEl.style.display = 'none';
         return;
     }
-    
+
     const timerEl = document.getElementById('guesslyticsTimer');
     if (!timerEl) return;
-    
+
     timerEl.style.display = 'inline';
     let nextSyncTime = Date.now() + settings.autoRefreshInterval * 1000;
-    
-    // Immediately update the timer text to avoid showing the old time
-    const remaining = Math.round((nextSyncTime - Date.now()) / 1000);
-    if (remaining > 0) {
-        const minutes = Math.floor(remaining / 60);
-        const seconds = remaining % 60;
-        timerEl.innerText = minutes > 0 ? 
-            `(Next sync in ${minutes}m ${seconds}s)` : 
-            `(Next sync in ${seconds}s)`;
-    }
-    
-    refreshIntervalId = window.setInterval(() => { 
-        checkForUpdatesCallback(userId, false); 
-        nextSyncTime = Date.now() + settings.autoRefreshInterval * 1000; 
-    }, settings.autoRefreshInterval * 1000);
-    
-    countdownIntervalId = window.setInterval(() => {
+
+    const updateTimer = () => {
         const remaining = Math.round((nextSyncTime - Date.now()) / 1000);
         if (remaining > 0) {
             const minutes = Math.floor(remaining / 60);
             const seconds = remaining % 60;
-            timerEl.innerText = minutes > 0 ? 
-                `(Next sync in ${minutes}m ${seconds}s)` : 
-                `(Next sync in ${seconds}s)`;
+            timerEl.innerText = minutes > 0
+                ? `(Next sync in ${minutes}m ${seconds}s)`
+                : `(Next sync in ${seconds}s)`;
         }
-    }, 1000);
+    };
+
+    updateTimer();
+
+    refreshIntervalId = window.setInterval(() => {
+        checkForUpdatesCallback();
+        nextSyncTime = Date.now() + settings.autoRefreshInterval * 1000;
+    }, settings.autoRefreshInterval * 1000);
+
+    countdownIntervalId = window.setInterval(updateTimer, 1000);
 }
