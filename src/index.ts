@@ -1,7 +1,7 @@
 import { checkForUpdates, fetchApi, processGames } from './lib/api';
 import { BACKFILL_STATE_KEY, DEFAULT_SETTINGS, SETTINGS_KEY } from './lib/constants';
 import { renderGraph, renderSettingsPanel, setSyncState, setupUI, startRefreshCycle } from './lib/ui';
-import { getStoredData, getUserId, loadSettings, setStoredData, waitForReady } from './lib/utils';
+import { getStoredData, getUserId, loadSettings, setStoredData, sleep, waitForReady } from './lib/utils';
 import { BackfillState, FeedResponse, Settings } from './types';
 
 /**
@@ -13,24 +13,58 @@ import { BackfillState, FeedResponse, Settings } from './types';
 
     // --- STATE & SETTINGS ---
     let settings: Settings = { ...DEFAULT_SETTINGS };
+    // Flags to prevent multiple initializations and concurrent operations
+    let isInitialized = false;
+    let isBackfilling = false;
 
     /**
      * Backfill history from the feed
      */
     async function backfillHistory(userId: string, initialToken: string): Promise<void> {
+        // Check if already backfilling to prevent concurrent backfill operations
+        if (isBackfilling) {
+            console.log('Guesslytics: Backfill already in progress, skipping');
+            return;
+        }
+        
+        console.log(`Guesslytics: Starting backfill history`, {
+            fullHistory: settings.backfillFullHistory,
+            daysLimit: settings.backfillDays,
+            initialToken: initialToken
+        });
+        
+        // Set the backfilling flag
+        isBackfilling = true;
         setSyncState(true);
         let paginationToken = initialToken;
         let pagesProcessed = 0;
         const cutoffDate = new Date();
+        let newDataFound = false;
         
         if (!settings.backfillFullHistory) {
             cutoffDate.setDate(cutoffDate.getDate() - settings.backfillDays);
+            console.log(`Guesslytics: Backfill cutoff date set to`, {
+                date: cutoffDate.toISOString(),
+                daysBack: settings.backfillDays
+            });
+        } else {
+            console.log(`Guesslytics: Full history backfill enabled, no cutoff date`);
         }
+        
+        // Get current stored data to check for the oldest game
+        const initialData = await getStoredData();
+        console.log(`Guesslytics: Initial data stats`, {
+            totalGames: initialData.overall.length,
+            oldestGame: initialData.overall.length > 0 ? initialData.overall[0].timestamp : 'none',
+            newestGame: initialData.overall.length > 0 ? 
+                initialData.overall[initialData.overall.length - 1].timestamp : 'none'
+        });
         
         while (paginationToken && pagesProcessed < 200) {
             pagesProcessed++;
             
             try {
+                console.log(`Guesslytics: Fetching backfill page ${pagesProcessed}`);
                 const feedData = await fetchApi<FeedResponse>(
                     `https://www.geoguessr.com/api/v4/feed/private?paginationToken=${paginationToken}`,
                     3,
@@ -38,9 +72,18 @@ import { BackfillState, FeedResponse, Settings } from './types';
                     settings.apiRequestDelay
                 );
                 
-                if (!feedData) break;
+                if (!feedData) {
+                    console.log(`Guesslytics: No feed data returned, stopping backfill`);
+                    break;
+                }
                 
-                await processGames(feedData.entries, userId, settings.apiRequestDelay);
+                console.log(`Guesslytics: Processing backfill page ${pagesProcessed}`, {
+                    entriesCount: feedData.entries.length,
+                    hasPaginationToken: !!feedData.paginationToken
+                });
+                
+                const pageNewData = await processGames(feedData.entries, userId, settings.apiRequestDelay);
+                newDataFound = newDataFound || pageNewData;
                 
                 const currentData = await getStoredData();
                 const oldestDate = currentData.overall.length > 0 ? 
@@ -49,52 +92,136 @@ import { BackfillState, FeedResponse, Settings } from './types';
                 setSyncState(true, `Syncing... (${currentData.overall.length} found, to ${oldestDate})`);
                 renderGraph(currentData, settings);
                 
+                // Check if we've reached the cutoff date
                 const oldestGame = currentData.overall[0];
                 if (!settings.backfillFullHistory && oldestGame && new Date(oldestGame.timestamp) < cutoffDate) {
+                    console.log(`Guesslytics: Reached cutoff date, stopping backfill`, {
+                        oldestGameDate: new Date(oldestGame.timestamp).toISOString(),
+                        cutoffDate: cutoffDate.toISOString()
+                    });
+                    break;
+                }
+                
+                // If we didn't find any new data in this page and we're not doing a full history sync,
+                // we can stop to avoid unnecessary API calls
+                if (!pageNewData && !settings.backfillFullHistory && pagesProcessed > 1) {
+                    console.log(`Guesslytics: No new data found in page ${pagesProcessed}, stopping backfill`);
                     break;
                 }
                 
                 paginationToken = feedData.paginationToken;
+                
+                // If there's no pagination token, we've reached the end of the feed
+                if (!paginationToken) {
+                    console.log(`Guesslytics: No more pagination tokens, reached end of feed`);
+                }
+                
+                // Add additional delay between pages to avoid rate limiting
+                // This is in addition to the delay in fetchApi
+                await sleep(1000);
             } catch (e) { 
                 console.error('Guesslytics: Failed to fetch a history page.', e); 
                 break; 
             }
         }
         
+        console.log(`Guesslytics: Backfill complete`, {
+            pagesProcessed,
+            newDataFound,
+            fullHistory: settings.backfillFullHistory,
+            daysLimit: settings.backfillDays
+        });
+        
         await GM_setValue(BACKFILL_STATE_KEY, { 
             lastLimitDays: settings.backfillFullHistory ? 9999 : settings.backfillDays, 
             lastSyncTimestamp: Date.now() 
         });
         
-        setSyncState(false, '✓ Synced');
+        // Reset the backfilling flag
+        isBackfilling = false;
+        setSyncState(false, newDataFound ? '✓ Synced' : '✓ Up to date');
     }
 
     /**
      * Initialize the UI
      */
     async function initUI(): Promise<void> {
+        // Check if already initialized to prevent multiple initializations
+        if (isInitialized) {
+            console.log('Guesslytics: UI already initialized, skipping');
+            return;
+        }
+        
         try {
             await waitForReady(() => document.querySelector('[class*="division-header_right"]') !== null);
             
             const userId = getUserId();
-            if (!userId) return;
+            if (!userId) {
+                console.error('Guesslytics: Failed to get user ID');
+                return;
+            }
+            
+            // Set the initialization flag
+            isInitialized = true;
+            console.log(`Guesslytics: Initializing UI for user ${userId}`);
             
             setupUI(userId, settings);
-            renderGraph(await getStoredData(), settings);
+            const storedData = await getStoredData();
+            renderGraph(storedData, settings);
             
-            const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0 }) as BackfillState;
+            // Check if we need to do a backfill
+            const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { 
+                lastLimitDays: 0,
+                lastSyncTimestamp: null
+            }) as BackfillState;
+            
             const currentLimit = settings.backfillFullHistory ? 9999 : settings.backfillDays;
-            const needsBackfill = currentLimit > backfillState.lastLimitDays;
+            const lastSyncTime = backfillState.lastSyncTimestamp || 0;
+            const timeSinceLastSync = Date.now() - lastSyncTime;
+            const hoursSinceLastSync = timeSinceLastSync / (1000 * 60 * 60);
+            
+            // Determine if we need to do a backfill based on:
+            // 1. If the days limit has increased
+            // 2. If it's been more than 24 hours since the last sync
+            // 3. If we have no data yet
+            const limitIncreased = currentLimit > backfillState.lastLimitDays;
+            const longTimeSinceSync = hoursSinceLastSync > 24;
+            const noDataYet = storedData.overall.length === 0;
+            
+            const needsBackfill = limitIncreased || longTimeSinceSync || noDataYet;
+            
+            console.log(`Guesslytics: Backfill check`, {
+                currentLimit,
+                lastLimitDays: backfillState.lastLimitDays,
+                limitIncreased,
+                hoursSinceLastSync,
+                longTimeSinceSync,
+                noDataYet,
+                needsBackfill
+            });
             
             if (needsBackfill) {
+                console.log(`Guesslytics: Backfill needed, fetching initial feed data`);
                 const feedData = await fetchApi<FeedResponse>('https://www.geoguessr.com/api/v4/feed/private');
                 
                 if (feedData?.paginationToken) {
-                    backfillHistory(userId, feedData.paginationToken);
+                    console.log(`Guesslytics: Starting backfill with pagination token`);
+                    try {
+                        await backfillHistory(userId, feedData.paginationToken);
+                    } catch (error) {
+                        console.error('Guesslytics: Error during backfill', error);
+                        // Ensure the backfilling flag is reset in case of error
+                        isBackfilling = false;
+                        setSyncState(false, 'Error during backfill');
+                    }
                 } else {
+                    console.log(`Guesslytics: No pagination token, starting refresh cycle`);
                     startRefreshCycle(userId, settings, checkForUpdatesCallback);
                 }
             } else {
+                console.log(`Guesslytics: No backfill needed, checking for updates`);
+                // Always check for updates first to catch any new games
+                await checkForUpdatesCallback(userId, false);
                 startRefreshCycle(userId, settings, checkForUpdatesCallback);
             }
             
@@ -154,64 +281,92 @@ import { BackfillState, FeedResponse, Settings } from './types';
             }
         };
         
-        // Add event listeners to settings inputs (except backfillFull which has special handling)
-        document.querySelectorAll('#guesslyticsSettingsModal input:not(#backfillFull)').forEach(el => {
-            (el as HTMLInputElement).onchange = () => saveAndRedraw(['backfillDays'].includes(el.id));
-        });
-        
-        // Toggle backfill days visibility
-        const fullHistoryCheck = document.getElementById('backfillFull') as HTMLInputElement;
-        if (fullHistoryCheck) {
-            const backfillDaysRow = document.getElementById('backfillDaysRow');
-            if (backfillDaysRow) {
-                // Set initial visibility (redundant with ui.ts but ensures consistency)
-                backfillDaysRow.style.display = fullHistoryCheck.checked ? 'none' : 'flex';
-                
-                // Add change handler for the fullHistoryCheck checkbox
-                fullHistoryCheck.onchange = () => { 
-                    if (backfillDaysRow) {
-                        backfillDaysRow.style.display = fullHistoryCheck.checked ? 'none' : 'flex';
-                    }
+        // Function to attach event handlers to settings panel elements
+        const attachSettingsPanelHandlers = () => {
+            console.log('Guesslytics: Attaching settings panel handlers');
+            
+            // Add event listeners to settings inputs (except backfillFull which has special handling)
+            document.querySelectorAll('#guesslyticsSettingsModal input:not(#backfillFull)').forEach(el => {
+                (el as HTMLInputElement).onchange = () => saveAndRedraw(['backfillDays'].includes(el.id));
+            });
+            
+            // Add saveAndRedraw handler for the fullHistoryCheck checkbox
+            const fullHistoryCheck = document.getElementById('backfillFull') as HTMLInputElement;
+            if (fullHistoryCheck) {
+                // The visibility toggling is handled in ui.ts
+                // Here we just need to add the saveAndRedraw call
+                const originalOnChange = fullHistoryCheck.onchange;
+                fullHistoryCheck.onchange = (e) => {
+                    // Call the original handler first (from ui.ts)
+                    if (originalOnChange) originalOnChange.call(fullHistoryCheck, e);
+                    // Then call saveAndRedraw
                     saveAndRedraw(true);
                 };
             }
-        }
+            
+            // Clear data button
+            const clearDataBtn = document.getElementById('clearDataBtn');
+            if (clearDataBtn) {
+                console.log('Guesslytics: Attaching clearDataBtn handler');
+                clearDataBtn.onclick = async () => {
+                    if (confirm('Are you sure you want to delete all stored rating data? This action cannot be undone.')) {
+                        await setStoredData({ overall: [], moving: [], noMove: [], nmpz: [] });
+                        await GM_setValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null });
+                        window.location.reload();
+                    }
+                };
+            } else {
+                console.log('Guesslytics: clearDataBtn not found');
+            }
+            
+            // Reset settings button
+            const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+            if (resetSettingsBtn) {
+                console.log('Guesslytics: Attaching resetSettingsBtn handler');
+                resetSettingsBtn.onclick = async () => {
+                    if (confirm('Are you sure you want to reset all settings to their defaults?')) {
+                        await GM_setValue(SETTINGS_KEY, DEFAULT_SETTINGS);
+                        settings = await loadSettings();
+                        renderSettingsPanel(settings);
+                    }
+                };
+            } else {
+                console.log('Guesslytics: resetSettingsBtn not found');
+            }
+        };
         
-        // Clear data button
-        const clearDataBtn = document.getElementById('clearDataBtn');
-        if (clearDataBtn) {
-            clearDataBtn.onclick = async () => {
-                if (confirm('Are you sure you want to delete all stored rating data? This action cannot be undone.')) {
-                    await setStoredData({ overall: [], moving: [], noMove: [], nmpz: [] });
-                    await GM_setValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null });
-                    window.location.reload();
-                }
-            };
-        }
+        // Attach handlers immediately for the initial setup
+        attachSettingsPanelHandlers();
         
-        // Reset settings button
-        const resetSettingsBtn = document.getElementById('resetSettingsBtn');
-        if (resetSettingsBtn) {
-            resetSettingsBtn.onclick = async () => {
-                if (confirm('Are you sure you want to reset all settings to their defaults?')) {
-                    await GM_setValue(SETTINGS_KEY, DEFAULT_SETTINGS);
-                    await loadSettings();
-                    renderSettingsPanel(settings);
-                }
-            };
-        }
+        // Listen for the custom event that signals the settings panel has been rendered
+        document.addEventListener('guesslyticsSettingsRendered', () => {
+            console.log('Guesslytics: Settings panel rendered, attaching handlers');
+            attachSettingsPanelHandlers();
+        });
     }
 
     /**
      * Observe for page changes
      */
     function observeForPageChanges(): void {
+        // Add debounce to prevent multiple calls in quick succession
+        let debounceTimer: number | null = null;
+        
         const observer = new MutationObserver(() => {
             const isSoloDuelsPage = window.location.pathname === '/multiplayer';
             const uiExists = document.getElementById('guesslyticsContainer');
             
-            if (isSoloDuelsPage && !uiExists) {
-                initUI();
+            // Only proceed if we're on the right page and UI doesn't exist yet
+            if (isSoloDuelsPage && !uiExists && !isInitialized) {
+                // Clear any existing timer
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                }
+                
+                // Set a new timer to call initUI after a short delay
+                debounceTimer = window.setTimeout(() => {
+                    initUI();
+                }, 500);
             }
         });
         
@@ -230,7 +385,7 @@ import { BackfillState, FeedResponse, Settings } from './types';
      * Initialize the script
      */
     async function init(): Promise<void> {
-        console.log(`Guesslytics v3.0 Initializing...`);
+        console.log(`Guesslytics v${GM_info.script.version} Initializing...`);
         
         // Load settings
         settings = await loadSettings();

@@ -134,7 +134,11 @@ export interface ChartOptions {
             position: string;
             callbacks: {
                 title: (items: any[]) => string;
-                label: (ctx: any) => string;
+                beforeLabel?: (ctx: any) => boolean | void;
+                label: (ctx: any) => string | null;
+                afterBody?: (tooltipItems: any[]) => string[];
+                afterFooter?: (ctx: any) => string | null;
+                labels?: (tooltipItems: any[]) => string[];
             };
         };
     };

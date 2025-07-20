@@ -3,6 +3,18 @@ declare function GM_setValue(key: string, value: any): Promise<void>;
 declare function GM_getValue(key: string, defaultValue?: any): Promise<any>;
 declare function GM_addStyle(css: string): void;
 
+interface GM_ScriptInfo {
+    script: {
+        version: string;
+        name: string;
+        author: string;
+        description: string;
+        namespace: string;
+    };
+}
+
+declare const GM_info: GM_ScriptInfo;
+
 interface GM_xmlhttpRequestResponse {
     status: number;
     response: any;

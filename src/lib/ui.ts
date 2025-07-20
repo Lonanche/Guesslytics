@@ -29,12 +29,21 @@ export function setSyncState(syncing: boolean, text: string = ''): void {
     } else {
         statusEl.innerText = text;
         const userId = getUserId();
-        if (userId) {
-            // This is a temporary fix - the actual settings and callback will be provided by the main script
-            startRefreshCycle(userId, { autoRefreshInterval: 60 } as any, async () => {});
-        }
+        
+        // Hide timer while status text is showing
+        timerEl.style.display = 'none';
+        
+        // Wait for status text to be cleared before showing timer
         setTimeout(() => {
-            if (statusEl && statusEl.innerText === text) statusEl.innerText = '';
+            if (statusEl && statusEl.innerText === text) {
+                statusEl.innerText = '';
+            }
+            
+            // Start refresh cycle and show timer after status is cleared
+            if (userId) {
+                // This is a temporary fix - the actual settings and callback will be provided by the main script
+                startRefreshCycle(userId, { autoRefreshInterval: 60 } as any, async () => {});
+            }
         }, 3000);
     }
 }
@@ -106,6 +115,8 @@ export function setupUI(userId: string | null, settings: Settings): void {
         #guesslyticsSettingsModal h2 { margin-top: 0; text-align: center; }
         .settings-section { margin-bottom: 10px; } .settings-section h4 { font-size: 14px; margin: 0 0 8px; border-bottom: 1px solid #444; padding-bottom: 4px; }
         .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
+        #backfillDaysRow { display: flex; } /* Visible by default */
+        #backfillDaysRow.hidden { display: none !important; } /* Hide when given the hidden class */
         .settings-row input { width: 60px; text-align: center; background: #333; border: 1px solid #555; color: #fff; border-radius: 4px; padding: 4px; }
         .settings-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #00BCD4; }
         .graph-toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; } .graph-toggle-item { display: flex; align-items: center; justify-content: space-between; }
@@ -231,19 +242,40 @@ export async function renderSettingsPanel(settings: Settings): Promise<void> {
             <div class="settings-actions"><button id="resetSettingsBtn">Reset Settings</button>
             <button id="clearDataBtn">Clear All Data</button></div>
             <div class="settings-footer"><a href="https://github.com/Avanatiker/Guesslytics" target="_blank">
-            ${ICONS.GITHUB} Guesslytics v3.0 by Constructor</a></div>
+            ${ICONS.GITHUB} Guesslytics v${GM_info.script.version} by Constructor</a></div>
         </div>`;
     
     document.getElementById('guesslyticsSettingsOverlay')!.onclick = () => settingsPanel.style.display = 'none';
     
     // Set initial visibility of backfill days row based on backfillFullHistory setting
     const backfillDaysRow = document.getElementById('backfillDaysRow');
-    if (backfillDaysRow) {
-        backfillDaysRow.style.display = settings.backfillFullHistory ? 'none' : 'flex';
+    const fullHistoryCheck = document.getElementById('backfillFull') as HTMLInputElement;
+    
+    if (backfillDaysRow && fullHistoryCheck) {
+        // Set initial visibility
+        if (settings.backfillFullHistory) {
+            backfillDaysRow.classList.add('hidden');
+        } else {
+            backfillDaysRow.classList.remove('hidden');
+        }
+        
+        // Add change handler for the fullHistoryCheck checkbox
+        fullHistoryCheck.onchange = () => { 
+            if (backfillDaysRow) {
+                if (fullHistoryCheck.checked) {
+                    backfillDaysRow.classList.add('hidden');
+                } else {
+                    backfillDaysRow.classList.remove('hidden');
+                }
+            }
+            // The saveAndRedraw function will be called by the event handler in index.ts
+        };
     }
     
-    // Will be implemented in the main index.ts file
-    // saveAndRedraw, clearDataBtn, resetSettingsBtn handlers
+    // Dispatch a custom event to signal that the settings panel has been rendered
+    // This allows index.ts to attach event handlers after the panel is rendered
+    const settingsRenderedEvent = new CustomEvent('guesslyticsSettingsRendered');
+    document.dispatchEvent(settingsRenderedEvent);
 }
 
 /**
@@ -286,7 +318,7 @@ export function renderGraph(data: RatingHistory, settings: Settings): void {
             pointHoverBackgroundColor: style.color,
             fill: settings.showAreaFill, 
             backgroundColor: gradient, 
-            tension: 0.1,
+            tension: 0, // Changed from 0.1 to 0 for linear interpolation to avoid tooltip issues
             hidden: !settings.visibleDatasets[key as keyof typeof settings.visibleDatasets]
         };
     });
@@ -312,10 +344,34 @@ export function renderGraph(data: RatingHistory, settings: Settings): void {
             tooltip: { 
                 position: 'nearest', 
                 callbacks: { 
-                    title: (items) => formatDate(items[0].parsed.x), 
-                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}` 
+                    // Direct approach to handle tooltip labels
+                    // We'll use a custom formatter that completely replaces the default behavior
+                    // This ensures we have full control over what's displayed
+                    title: (items) => formatDate(items[0].parsed.x),
+                    
+                    // Disable the default label formatter
+                    label: () => null,
+                    
+                    // Use a custom formatter that builds the entire tooltip content
+                    // This gives us complete control over the output
+                    afterBody: (tooltipItems) => {
+                        // Use a Set to track which datasets we've already processed
+                        const processedDatasets = new Set();
+                        const lines = [];
+                        
+                        // Process each tooltip item
+                        tooltipItems.forEach(item => {
+                            // Only process each dataset once
+                            if (!processedDatasets.has(item.dataset.label)) {
+                                processedDatasets.add(item.dataset.label);
+                                lines.push(`${item.dataset.label}: ${item.parsed.y}`);
+                            }
+                        });
+                        
+                        return lines;
+                    }
                 } 
-            } 
+            }
         },
         scales: { 
             x: { 
@@ -466,6 +522,16 @@ export function startRefreshCycle(
     
     timerEl.style.display = 'inline';
     let nextSyncTime = Date.now() + settings.autoRefreshInterval * 1000;
+    
+    // Immediately update the timer text to avoid showing the old time
+    const remaining = Math.round((nextSyncTime - Date.now()) / 1000);
+    if (remaining > 0) {
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        timerEl.innerText = minutes > 0 ? 
+            `(Next sync in ${minutes}m ${seconds}s)` : 
+            `(Next sync in ${seconds}s)`;
+    }
     
     refreshIntervalId = window.setInterval(() => { 
         checkForUpdatesCallback(userId, false); 

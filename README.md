@@ -42,19 +42,9 @@ git clone https://github.com/Avanatiker/Guesslytics && cd Guesslytics && yarn &&
   - `index.ts` - Main type definitions
   - `global.d.ts` - Global ambient declarations
 
-## Migration Notes
-
-This project was migrated from JavaScript to TypeScript. The migration involved:
-
-1. Creating proper TypeScript interfaces for all data structures
-2. Organizing the code into modules for better maintainability
-3. Adding type annotations to all functions and variables
-4. Creating ambient declarations for Tampermonkey API and Chart.js
-5. Setting up the build process to generate the Tampermonkey script
-
 ## Future Improvements
 
-- Clean up unused imports and variables flagged by the linter
+- Support Team Duels mode
 - Add unit tests for critical functionality
 - Improve error handling for API requests
 - Add more detailed documentation for each module
