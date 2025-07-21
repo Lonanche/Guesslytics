@@ -30,7 +30,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/hmerritt/tampermonkey-rollup-template.git"
+        "url": "https://github.com/Avanatiker/Guesslytics.git"
     },
     "packageManager": "yarn@4.9.2",
     "tampermonkey": {

@@ -1,6 +1,7 @@
 import { ChartDataset, ChartOptions, RatingHistory, Settings } from '../types';
 import { BACKFILL_STATE_KEY, DATASET_STYLES, ICONS } from './constants';
 import { formatDate, getStoredData, getUserId, logger } from './utils';
+import { applyStyles } from './styles';
 
 // --- Module State ---
 let ratingChart: any = null; // The Chart.js instance.
@@ -107,41 +108,8 @@ export function setupUI(
         await resyncCallback();
     };
 
-    // Inject CSS styles into the page.
-    GM_addStyle(`
-        #guesslyticsContainer { display: flex; flex-direction: column; width: 100%; height: 210px; background: rgba(28,28,28,${settings.backgroundOpacity / 100}); border-radius: 8px; border: 1px solid #444; transition: height 0.3s ease, background-color 0.3s ease; box-sizing: border-box; }
-        #guesslyticsContainer.expanded { height: 400px; }
-        .guesslytics-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid #444; flex-shrink: 0; }
-        .guesslytics-title-wrapper { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 14px; }
-        #guesslyticsStatus { font-size: 12px; color: #00BCD4; display: flex; align-items: center; gap: 5px; }
-        #guesslyticsTimer { font-size: 11px; color: #888; }
-        #graphWrapper { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; padding: 5px 10px 10px 5px; box-sizing: border-box; }
-        #guesslyticsStats { display: none; flex-wrap: wrap; justify-content: space-around; padding: 5px 10px; gap: 10px; border-bottom: 1px solid #444; margin-bottom: 5px; flex-shrink: 0; }
-        .stat-item { text-align: center; } .stat-item .value { font-size: 16px; font-weight: bold; color: #fff; } .stat-item .label { font-size: 11px; color: #aaa; } .stat-item .value.positive { color: #4CAF50; } .stat-item .value.negative { color: #F44336; }
-        #guesslyticsCanvas { flex-grow: 1; min-height: 0; }
-        .chart-buttons { display: flex; gap: 5px; } .chart-buttons button { background: #333; border: 1px solid #555; border-radius: 5px; cursor: pointer; color: white; width: 24px; height: 24px; padding: 3px; }
-        .chart-buttons button:hover { background: #444; } .chart-buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #guesslyticsSettingsPanel { display: none; }
-        #guesslyticsSettingsOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; }
-        #guesslyticsSettingsModal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; background: #1c1c1c; color: #fff; padding: 25px; border-radius: 8px; z-index: 10001; border: 1px solid #444; }
-        #guesslyticsSettingsModal h2 { margin-top: 0; text-align: center; }
-        .settings-section { margin-bottom: 10px; } .settings-section h4 { font-size: 14px; margin: 0 0 8px; border-bottom: 1px solid #444; padding-bottom: 4px; }
-        .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
-        #backfillDaysRow { display: flex; }
-        #backfillDaysRow.hidden { display: none !important; }
-        .settings-row input { width: 60px; text-align: center; background: #333; border: 1px solid #555; color: #fff; border-radius: 4px; padding: 4px; }
-        .settings-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #00BCD4; }
-        .graph-toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; } .graph-toggle-item { display: flex; align-items: center; justify-content: space-between; }
-        .color-swatch { width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; border: 1px solid #888; }
-        .settings-actions { display: flex; gap: 10px; margin-top: 10px; }
-        .settings-actions button { flex-grow: 1; padding: 8px; border: none; color: #fff; font-weight: bold; cursor: pointer; border-radius: 4px; }
-        #clearDataBtn { background: #c53030; } #resetSettingsBtn { background: #717171; }
-        .settings-stats { font-size: 13px; color: #ccc; border-top: 1px solid #444; padding-top: 10px; margin-top: 10px; }
-        .settings-footer { text-align: center; font-size: 11px; color: #888; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
-        .settings-footer a { color: #aaa; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; } .settings-footer svg { width: 14px; height: 14px; }
-        .gg-spinner { animation: gg-spinner 1s linear infinite; box-sizing: border-box; position: relative; display: block; transform: scale(var(--ggs,0.7)); width: 16px; height: 16px; border: 2px solid; border-top-color: transparent; border-radius: 50%; }
-        @keyframes gg-spinner { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
-    `);
+    // Apply CSS styles from the external file
+    applyStyles(settings);
 }
 
 /**
@@ -280,26 +248,14 @@ export async function renderSettingsPanel(settings: Settings): Promise<void> {
 }
 
 /**
- * Renders the rating history chart.
+ * Creates chart datasets from rating history data.
  * @param data The rating history data.
  * @param settings The user's current settings.
+ * @param canvas The canvas element for the chart.
+ * @returns An array of chart datasets.
  */
-export async function renderGraph(data: RatingHistory, settings: Settings): Promise<void> {
-    const wasEmpty = !ratingChart || ratingChart.data.datasets.every((ds: ChartDataset) => ds.data.length === 0);
-    const currentZoom = ratingChart && !wasEmpty ? { min: ratingChart.scales.x.min, max: ratingChart.scales.x.max } : null;
-
-    if (ratingChart) ratingChart.destroy();
-
-    const canvas = document.getElementById('guesslyticsCanvas') as HTMLCanvasElement;
-    if (!canvas) return;
-
-    canvas.style.cursor = 'grab';
-
-    const timestamps = data.overall.map((d) => new Date(d.timestamp).getTime());
-    const minTimestamp = data.overall.length > 0 ? Math.min(...timestamps) : null;
-    const maxTimestamp = data.overall.length > 0 ? Math.max(...timestamps) : null;
-
-    const datasets = Object.keys(DATASET_STYLES).map((key) => {
+function createChartDatasets(data: RatingHistory, settings: Settings, canvas: HTMLCanvasElement): ChartDataset[] {
+    return Object.keys(DATASET_STYLES).map((key) => {
         const style = DATASET_STYLES[key as keyof typeof DATASET_STYLES];
         const gradient = canvas.getContext('2d')!.createLinearGradient(0, 0, 0, isGraphExpanded ? 400 : 210);
         gradient.addColorStop(0, `${style.color}55`);
@@ -324,16 +280,57 @@ export async function renderGraph(data: RatingHistory, settings: Settings): Prom
             hidden: !settings.visibleDatasets[key as keyof typeof settings.visibleDatasets],
         };
     });
+}
 
-    let wasDragging = false;
+/**
+ * Creates a crosshair line plugin for the chart.
+ * @returns The crosshair line plugin.
+ */
+function createCrosshairLinePlugin() {
+    return {
+        id: 'crosshairLine',
+        afterDatasetsDraw: (chart: any) => {
+            const { tooltip, ctx, chartArea: { top, bottom } } = chart;
+            if (tooltip.getActiveElements()?.length > 0) {
+                const x = tooltip.getActiveElements()[0].element.x;
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(x, top);
+                ctx.lineTo(x, bottom);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.stroke();
+                ctx.restore();
+            }
+        },
+    };
+}
 
+/**
+ * Creates chart options for the rating history chart.
+ * @param data The rating history data.
+ * @param settings The user's current settings.
+ * @param currentZoom The current zoom level, if any.
+ * @param minTimestamp The minimum timestamp in the data.
+ * @param maxTimestamp The maximum timestamp in the data.
+ * @param wasDragging Reference to the wasDragging flag.
+ * @returns The chart options.
+ */
+function createChartOptions(
+    data: RatingHistory, 
+    settings: Settings, 
+    currentZoom: { min: number; max: number } | null,
+    minTimestamp: number | null,
+    maxTimestamp: number | null,
+    wasDragging: { value: boolean }
+): ChartOptions {
     const chartOptions: ChartOptions = {
         animation: false,
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'x', intersect: false },
         onClick: (e, elements) => {
-            if (wasDragging || elements.length === 0) return;
+            if (wasDragging.value || elements.length === 0) return;
             const { datasetIndex, index } = elements[0];
             const gameId = ratingChart.data.datasets[datasetIndex].data[index].gameId;
             if (gameId) window.open(`https://www.geoguessr.com/duels/${gameId}`, '_blank');
@@ -373,6 +370,7 @@ export async function renderGraph(data: RatingHistory, settings: Settings): Prom
         },
     };
 
+    // Set zoom level
     if (currentZoom?.min && currentZoom?.max) {
         chartOptions.scales.x.min = currentZoom.min;
         chartOptions.scales.x.max = currentZoom.max;
@@ -384,33 +382,24 @@ export async function renderGraph(data: RatingHistory, settings: Settings): Prom
         chartOptions.scales.x.max = lastTimestamp;
     }
 
-    // A simple Chart.js plugin to draw a vertical line on the chart that follows the tooltip.
-    const crosshairLinePlugin = {
-        id: 'crosshairLine',
-        afterDatasetsDraw: (chart: any) => {
-            const { tooltip, ctx, chartArea: { top, bottom } } = chart;
-            if (tooltip.getActiveElements()?.length > 0) {
-                const x = tooltip.getActiveElements()[0].element.x;
-                ctx.save();
-                ctx.beginPath();
-                ctx.moveTo(x, top);
-                ctx.lineTo(x, bottom);
-                ctx.lineWidth = 1;
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.stroke();
-                ctx.restore();
-            }
-        },
-    };
+    return chartOptions;
+}
 
-    ratingChart = new Chart(canvas, {
-        type: 'line',
-        data: { datasets },
-        options: chartOptions,
-        plugins: [crosshairLinePlugin],
-    });
-
-    // --- Pan and Zoom Functionality ---
+/**
+ * Sets up pan and zoom interactions for the chart.
+ * @param canvas The canvas element for the chart.
+ * @param data The rating history data.
+ * @param minTimestamp The minimum timestamp in the data.
+ * @param maxTimestamp The maximum timestamp in the data.
+ * @param wasDragging Reference to the wasDragging flag.
+ */
+function setupChartInteractions(
+    canvas: HTMLCanvasElement, 
+    data: RatingHistory, 
+    minTimestamp: number | null, 
+    maxTimestamp: number | null,
+    wasDragging: { value: boolean }
+): void {
     let isPanning = false, lastX = 0, startX = 0;
 
     const onPanEnd = () => {
@@ -418,14 +407,14 @@ export async function renderGraph(data: RatingHistory, settings: Settings): Prom
         isPanning = false;
         canvas.style.cursor = 'grab';
         if (isGraphExpanded) calculateAndRenderStats();
-        setTimeout(() => (wasDragging = false), 50);
+        setTimeout(() => (wasDragging.value = false), 50);
     };
 
     canvas.onmousedown = (e) => {
         isPanning = true;
         lastX = e.clientX;
         startX = e.clientX;
-        wasDragging = false;
+        wasDragging.value = false;
         canvas.style.cursor = 'grabbing';
     };
 
@@ -434,7 +423,7 @@ export async function renderGraph(data: RatingHistory, settings: Settings): Prom
 
     canvas.onmousemove = (e) => {
         if (!isPanning) return;
-        if (Math.abs(e.clientX - startX) > 5) wasDragging = true;
+        if (Math.abs(e.clientX - startX) > 5) wasDragging.value = true;
         const deltaX = e.clientX - lastX;
         lastX = e.clientX;
         const { scales } = ratingChart;
@@ -479,7 +468,47 @@ export async function renderGraph(data: RatingHistory, settings: Settings): Prom
         ratingChart.update('none');
         if (isGraphExpanded) calculateAndRenderStats();
     };
+}
 
+/**
+ * Renders the rating history chart.
+ * @param data The rating history data.
+ * @param settings The user's current settings.
+ */
+export async function renderGraph(data: RatingHistory, settings: Settings): Promise<void> {
+    const wasEmpty = !ratingChart || ratingChart.data.datasets.every((ds: ChartDataset) => ds.data.length === 0);
+    const currentZoom = ratingChart && !wasEmpty ? { min: ratingChart.scales.x.min, max: ratingChart.scales.x.max } : null;
+
+    if (ratingChart) ratingChart.destroy();
+
+    const canvas = document.getElementById('guesslyticsCanvas') as HTMLCanvasElement;
+    if (!canvas) return;
+
+    canvas.style.cursor = 'grab';
+
+    // Calculate timestamp bounds
+    const timestamps = data.overall.map((d) => new Date(d.timestamp).getTime());
+    const minTimestamp = data.overall.length > 0 ? Math.min(...timestamps) : null;
+    const maxTimestamp = data.overall.length > 0 ? Math.max(...timestamps) : null;
+
+    // Create datasets, options, and plugins
+    const wasDragging = { value: false }; // Use an object to allow reference passing
+    const datasets = createChartDatasets(data, settings, canvas);
+    const chartOptions = createChartOptions(data, settings, currentZoom, minTimestamp, maxTimestamp, wasDragging);
+    const crosshairLinePlugin = createCrosshairLinePlugin();
+
+    // Create the chart
+    ratingChart = new Chart(canvas, {
+        type: 'line',
+        data: { datasets },
+        options: chartOptions,
+        plugins: [crosshairLinePlugin],
+    });
+
+    // Set up pan and zoom interactions
+    setupChartInteractions(canvas, data, minTimestamp, maxTimestamp, wasDragging);
+
+    // Update stats if expanded
     if (isGraphExpanded) calculateAndRenderStats();
 }
 

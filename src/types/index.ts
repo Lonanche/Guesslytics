@@ -1,26 +1,5 @@
-// Tampermonkey API types
-declare function GM_setValue(key: string, value: any): void;
-declare function GM_getValue(key: string, defaultValue?: any): any;
-declare function GM_addStyle(css: string): void;
-declare interface GM_xmlhttpRequestOptions {
-    method: string;
-    url: string;
-    responseType?: string;
-    timeout?: number;
-    onload?: (response: GM_xmlhttpRequestResponse) => void;
-    onerror?: (error: any) => void;
-    ontimeout?: () => void;
-}
-declare interface GM_xmlhttpRequestResponse {
-    status: number;
-    response: any;
-    responseText?: string;
-}
-declare function GM_xmlhttpRequest(options: GM_xmlhttpRequestOptions): void;
-
-// Chart.js types - used in index.ts and ui.ts
-// eslint-disable-next-line no-unused-vars
-declare const Chart: any;
+// Application types are defined here
+// Tampermonkey API types and Chart.js types are defined in global.d.ts
 
 // Application types
 export interface Settings {

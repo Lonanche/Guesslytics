@@ -15,7 +15,296 @@
 // @updateURL    https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js
 // @downloadURL  https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js
 // ==/UserScript==
-(function(){let e=`guesslyticsSettings`,t=`guesslyticsRatingHistory`,n=`guesslyticsBackfillState`,r={statsTimeframe:7,backfillFullHistory:!1,backfillDays:30,showAreaFill:!0,visibleDatasets:{overall:!0,moving:!0,noMove:!0,nmpz:!0},autoRefreshInterval:60,apiRequestDelay:250,backgroundOpacity:15,initialZoomDays:7,verboseLogging:!1},i={EXPAND:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"></path></svg>`,COLLAPSE:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 19h3v-3h2v5H8v-2zm3-8h5v-2H8v5h2v-3zm6-8v3h3v2h-5V5h2zm-8 5H5V8h5v3z"></path></svg>`,SETTINGS:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61-.25-1.17-.59-1.69-.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24-.42-.12-.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22-.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"></path></svg>`,GITHUB:`<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>`,RESYNC:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>`},a={overall:{label:`Overall`,color:`#FFFFFF`},moving:{label:`Moving`,color:`#4A90E2`},noMove:{label:`No Move`,color:`#F5A623`},nmpz:{label:`NMPZ`,color:`#BD10E0`}};var o=class{enabled=!1;setLogging(e){this.enabled=e}log(e,t){this.enabled&&(t?console.log(`[Guesslytics] ${e}`,t):console.log(`[Guesslytics] ${e}`))}};let s=new o;async function c(){let t=await GM_getValue(e,r),n={...r,...t,visibleDatasets:{...r.visibleDatasets,...t.visibleDatasets}};return s.setLogging(n.verboseLogging),n}function l(e,t=2e4){return new Promise((n,r)=>{let i=setInterval(()=>{e()&&(clearInterval(i),n())},200);setTimeout(()=>{clearInterval(i),r(Error(`Guesslytics: Timed out waiting for page element.`))},t)})}let u=e=>new Promise(t=>setTimeout(t,e)),d=e=>e?new Date(e).toLocaleString():`N/A`;function f(){try{return JSON.parse(document.getElementById(`__NEXT_DATA__`)?.innerHTML||`{}`)?.props?.accountProps?.account?.user?.userId||null}catch{return null}}async function p(){let e=await GM_getValue(t);return e||{overall:[],moving:[],noMove:[],nmpz:[]}}async function m(e){await GM_setValue(t,e)}function h(e){return e===`StandardDuels`?`moving`:e===`NoMoveDuels`?`noMove`:e===`NmpzDuels`?`nmpz`:null}let g=null,_=!1,v=null,y=null;function b(e,t=``,n,r){let i=document.getElementById(`guesslyticsStatus`),a=document.getElementById(`guesslyticsTimer`),o=document.getElementById(`guesslyticsResyncBtn`);!i||!a||!o||(o.disabled=e,e?(y&&clearInterval(y),y=null,a.style.display=`none`,i.innerHTML=`${t||`Syncing...`} <div class="gg-spinner"></div>`):(i.innerText=t,setTimeout(()=>{i&&i.innerText===t&&(i.innerText=``)},3e3),n&&r&&T(n,r)))}function x(e,t,n){s.log(`Setting up UI.`),Chart.defaults.font.family=`'ggFont', sans-serif`;let r=document.querySelector(`[class*="division-header_right"]`);if(!r||document.getElementById(`guesslyticsContainer`))return;let a=document.createElement(`div`);if(a.id=`guesslyticsContainer`,a.innerHTML=`
+(function(){let e=`guesslyticsSettings`,t=`guesslyticsRatingHistory`,n=`guesslyticsBackfillState`,r={statsTimeframe:7,backfillFullHistory:!1,backfillDays:30,showAreaFill:!0,visibleDatasets:{overall:!0,moving:!0,noMove:!0,nmpz:!0},autoRefreshInterval:60,apiRequestDelay:250,backgroundOpacity:15,initialZoomDays:7,verboseLogging:!1},i={EXPAND:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"></path></svg>`,COLLAPSE:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 19h3v-3h2v5H8v-2zm3-8h5v-2H8v5h2v-3zm6-8v3h3v2h-5V5h2zm-8 5H5V8h5v3z"></path></svg>`,SETTINGS:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61-.25-1.17-.59-1.69-.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24-.42-.12-.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22-.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"></path></svg>`,GITHUB:`<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>`,RESYNC:`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>`},a={overall:{label:`Overall`,color:`#FFFFFF`},moving:{label:`Moving`,color:`#4A90E2`},noMove:{label:`No Move`,color:`#F5A623`},nmpz:{label:`NMPZ`,color:`#BD10E0`}};var o=class{enabled=!1;setLogging(e){this.enabled=e}log(e,t){this.enabled&&(t?console.log(`[Guesslytics] ${e}`,t):console.log(`[Guesslytics] ${e}`))}error(e,t){let n=t instanceof Error?t.message:t;console.error(`[Guesslytics] ERROR: ${e}`,n||``)}};let s=new o;function c(e,t,n){let r=e instanceof Error?e.message:e;s.error(`${t}: ${r||`Unknown error`}`,e),n?.setSyncState&&!n.silent&&n.setSyncState(!1,`Error during operation`,n.settings,n.callback)}async function l(){let t=await GM_getValue(e,r),n={...r,...t,visibleDatasets:{...r.visibleDatasets,...t.visibleDatasets}};return s.setLogging(n.verboseLogging),n}function u(e,t=2e4){return new Promise((n,r)=>{let i=setInterval(()=>{e()&&(clearInterval(i),n())},200);setTimeout(()=>{clearInterval(i);let e=Error(`Timed out waiting for page element.`);c(e,`Page initialization`,{silent:!0}),r(e)},t)})}let d=e=>new Promise(t=>setTimeout(t,e)),f=e=>e?new Date(e).toLocaleString():`N/A`;function p(){try{return JSON.parse(document.getElementById(`__NEXT_DATA__`)?.innerHTML||`{}`)?.props?.accountProps?.account?.user?.userId||null}catch(e){return c(e,`Failed to get user ID from page data`,{silent:!0}),null}}async function m(){let e=await GM_getValue(t);return e||{overall:[],moving:[],noMove:[],nmpz:[]}}async function h(e){await GM_setValue(t,e)}function g(e){return e===`StandardDuels`?`moving`:e===`NoMoveDuels`?`noMove`:e===`NmpzDuels`?`nmpz`:null}let _=`
+#guesslyticsContainer { 
+    display: flex; 
+    flex-direction: column; 
+    width: 100%; 
+    height: 210px; 
+    background: rgba(28,28,28,0.15); /* Default opacity 15% */
+    border-radius: 8px; 
+    border: 1px solid #444; 
+    transition: height 0.3s ease, background-color 0.3s ease; 
+    box-sizing: border-box; 
+}
+
+#guesslyticsContainer.expanded { 
+    height: 400px; 
+}
+
+.guesslytics-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    padding: 10px 15px; 
+    border-bottom: 1px solid #444; 
+    flex-shrink: 0; 
+}
+
+.guesslytics-title-wrapper { 
+    display: flex; 
+    align-items: center; 
+    gap: 10px; 
+    color: #fff; 
+    font-size: 14px; 
+}
+
+#guesslyticsStatus { 
+    font-size: 12px; 
+    color: #00BCD4; 
+    display: flex; 
+    align-items: center; 
+    gap: 5px; 
+}
+
+#guesslyticsTimer { 
+    font-size: 11px; 
+    color: #888; 
+}
+
+#graphWrapper { 
+    display: flex; 
+    flex-direction: column; 
+    flex-grow: 1; 
+    min-height: 0; 
+    padding: 5px 10px 10px 5px; 
+    box-sizing: border-box; 
+}
+
+#guesslyticsStats { 
+    display: none; 
+    flex-wrap: wrap; 
+    justify-content: space-around; 
+    padding: 5px 10px; 
+    gap: 10px; 
+    border-bottom: 1px solid #444; 
+    margin-bottom: 5px; 
+    flex-shrink: 0; 
+}
+
+.stat-item { 
+    text-align: center; 
+} 
+
+.stat-item .value { 
+    font-size: 16px; 
+    font-weight: bold; 
+    color: #fff; 
+} 
+
+.stat-item .label { 
+    font-size: 11px; 
+    color: #aaa; 
+} 
+
+.stat-item .value.positive { 
+    color: #4CAF50; 
+} 
+
+.stat-item .value.negative { 
+    color: #F44336; 
+}
+
+#guesslyticsCanvas { 
+    flex-grow: 1; 
+    min-height: 0; 
+}
+
+.chart-buttons { 
+    display: flex; 
+    gap: 5px; 
+} 
+
+.chart-buttons button { 
+    background: #333; 
+    border: 1px solid #555; 
+    border-radius: 5px; 
+    cursor: pointer; 
+    color: white; 
+    width: 24px; 
+    height: 24px; 
+    padding: 3px; 
+}
+
+.chart-buttons button:hover { 
+    background: #444; 
+} 
+
+.chart-buttons button:disabled { 
+    opacity: 0.5; 
+    cursor: not-allowed; 
+}
+
+/* Settings Panel Styles */
+#guesslyticsSettingsPanel { 
+    display: none; 
+}
+
+#guesslyticsSettingsOverlay { 
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 100%; 
+    background: rgba(0,0,0,0.7); 
+    z-index: 10000; 
+}
+
+#guesslyticsSettingsModal { 
+    position: fixed; 
+    top: 50%; 
+    left: 50%; 
+    transform: translate(-50%, -50%); 
+    width: 400px; 
+    background: #1c1c1c; 
+    color: #fff; 
+    padding: 25px; 
+    border-radius: 8px; 
+    z-index: 10001; 
+    border: 1px solid #444; 
+}
+
+#guesslyticsSettingsModal h2 { 
+    margin-top: 0; 
+    text-align: center; 
+}
+
+.settings-section { 
+    margin-bottom: 10px; 
+} 
+
+.settings-section h4 { 
+    font-size: 14px; 
+    margin: 0 0 8px; 
+    border-bottom: 1px solid #444; 
+    padding-bottom: 4px; 
+}
+
+.settings-row { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 8px; 
+    font-size: 13px; 
+}
+
+#backfillDaysRow { 
+    display: flex; 
+}
+
+#backfillDaysRow.hidden { 
+    display: none !important; 
+}
+
+.settings-row input { 
+    width: 60px; 
+    text-align: center; 
+    background: #333; 
+    border: 1px solid #555; 
+    color: #fff; 
+    border-radius: 4px; 
+    padding: 4px; 
+}
+
+.settings-row input[type="checkbox"] { 
+    width: 16px; 
+    height: 16px; 
+    accent-color: #00BCD4; 
+}
+
+.graph-toggle-row { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    gap: 5px 15px; 
+} 
+
+.graph-toggle-item { 
+    display: flex; 
+    align-items: center; 
+    justify-content: space-between; 
+}
+
+.color-swatch { 
+    width: 12px; 
+    height: 12px; 
+    border-radius: 3px; 
+    margin-right: 8px; 
+    border: 1px solid #888; 
+}
+
+.settings-actions { 
+    display: flex; 
+    gap: 10px; 
+    margin-top: 10px; 
+}
+
+.settings-actions button { 
+    flex-grow: 1; 
+    padding: 8px; 
+    border: none; 
+    color: #fff; 
+    font-weight: bold; 
+    cursor: pointer; 
+    border-radius: 4px; 
+}
+
+#clearDataBtn { 
+    background: #c53030; 
+} 
+
+#resetSettingsBtn { 
+    background: #717171; 
+}
+
+.settings-stats { 
+    font-size: 13px; 
+    color: #ccc; 
+    border-top: 1px solid #444; 
+    padding-top: 10px; 
+    margin-top: 10px; 
+}
+
+.settings-footer { 
+    text-align: center; 
+    font-size: 11px; 
+    color: #888; 
+    margin-top: 10px; 
+    border-top: 1px solid #444; 
+    padding-top: 10px; 
+}
+
+.settings-footer a { 
+    color: #aaa; 
+    text-decoration: none; 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 4px; 
+} 
+
+.settings-footer svg { 
+    width: 14px; 
+    height: 14px; 
+}
+
+/* Spinner Animation */
+.gg-spinner { 
+    animation: gg-spinner 1s linear infinite; 
+    box-sizing: border-box; 
+    position: relative; 
+    display: block; 
+    transform: scale(0.7);
+    width: 16px; 
+    height: 16px; 
+    border: 2px solid; 
+    border-top-color: transparent; 
+    border-radius: 50%; 
+}
+
+@keyframes gg-spinner { 
+    0% { transform: rotate(0deg) } 
+    100% { transform: rotate(360deg) } 
+}
+`;function v(e){GM_addStyle(_.replace(`rgba(28,28,28,0.15)`,`rgba(28,28,28,${e.backgroundOpacity/100})`))}let y=null,b=!1,x=null,S=null;function C(e,t=``,n,r){let i=document.getElementById(`guesslyticsStatus`),a=document.getElementById(`guesslyticsTimer`),o=document.getElementById(`guesslyticsResyncBtn`);!i||!a||!o||(o.disabled=e,e?(S&&clearInterval(S),S=null,a.style.display=`none`,i.innerHTML=`${t||`Syncing...`} <div class="gg-spinner"></div>`):(i.innerText=t,setTimeout(()=>{i&&i.innerText===t&&(i.innerText=``)},3e3),n&&r&&M(n,r)))}function w(e,t,n){s.log(`Setting up UI.`),Chart.defaults.font.family=`'ggFont', sans-serif`;let r=document.querySelector(`[class*="division-header_right"]`);if(!r||document.getElementById(`guesslyticsContainer`))return;let a=document.createElement(`div`);if(a.id=`guesslyticsContainer`,a.innerHTML=`
         <div class="guesslytics-header">
             <div class="guesslytics-title-wrapper"><h3>RATING HISTORY</h3><span id="guesslyticsStatus"></span><span id="guesslyticsTimer"></span></div>
             <div class="chart-buttons">
@@ -24,46 +313,13 @@
                 <button id="guesslyticsSettingsBtn" title="Settings">${i.SETTINGS}</button>
             </div>
         </div>
-        <div id="graphWrapper"><div id="guesslyticsStats"></div><canvas id="guesslyticsCanvas"></canvas></div>`,r.innerHTML=``,r.appendChild(a),!document.getElementById(`guesslyticsSettingsPanel`)){let e=document.createElement(`div`);e.id=`guesslyticsSettingsPanel`,document.body.appendChild(e)}document.getElementById(`guesslyticsToggleBtn`).onclick=()=>{_=!_,a.classList.toggle(`expanded`,_),document.getElementById(`guesslyticsToggleBtn`).innerHTML=_?i.COLLAPSE:i.EXPAND,document.getElementById(`guesslyticsStats`).style.display=_?`flex`:`none`,_&&S()},document.getElementById(`guesslyticsSettingsBtn`).onclick=()=>{document.getElementById(`guesslyticsSettingsPanel`).style.display=`block`,C(t)},document.getElementById(`guesslyticsResyncBtn`).onclick=async()=>{await n()},GM_addStyle(`
-        #guesslyticsContainer { display: flex; flex-direction: column; width: 100%; height: 210px; background: rgba(28,28,28,${t.backgroundOpacity/100}); border-radius: 8px; border: 1px solid #444; transition: height 0.3s ease, background-color 0.3s ease; box-sizing: border-box; }
-        #guesslyticsContainer.expanded { height: 400px; }
-        .guesslytics-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid #444; flex-shrink: 0; }
-        .guesslytics-title-wrapper { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 14px; }
-        #guesslyticsStatus { font-size: 12px; color: #00BCD4; display: flex; align-items: center; gap: 5px; }
-        #guesslyticsTimer { font-size: 11px; color: #888; }
-        #graphWrapper { display: flex; flex-direction: column; flex-grow: 1; min-height: 0; padding: 5px 10px 10px 5px; box-sizing: border-box; }
-        #guesslyticsStats { display: none; flex-wrap: wrap; justify-content: space-around; padding: 5px 10px; gap: 10px; border-bottom: 1px solid #444; margin-bottom: 5px; flex-shrink: 0; }
-        .stat-item { text-align: center; } .stat-item .value { font-size: 16px; font-weight: bold; color: #fff; } .stat-item .label { font-size: 11px; color: #aaa; } .stat-item .value.positive { color: #4CAF50; } .stat-item .value.negative { color: #F44336; }
-        #guesslyticsCanvas { flex-grow: 1; min-height: 0; }
-        .chart-buttons { display: flex; gap: 5px; } .chart-buttons button { background: #333; border: 1px solid #555; border-radius: 5px; cursor: pointer; color: white; width: 24px; height: 24px; padding: 3px; }
-        .chart-buttons button:hover { background: #444; } .chart-buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
-        #guesslyticsSettingsPanel { display: none; }
-        #guesslyticsSettingsOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; }
-        #guesslyticsSettingsModal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; background: #1c1c1c; color: #fff; padding: 25px; border-radius: 8px; z-index: 10001; border: 1px solid #444; }
-        #guesslyticsSettingsModal h2 { margin-top: 0; text-align: center; }
-        .settings-section { margin-bottom: 10px; } .settings-section h4 { font-size: 14px; margin: 0 0 8px; border-bottom: 1px solid #444; padding-bottom: 4px; }
-        .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; }
-        #backfillDaysRow { display: flex; }
-        #backfillDaysRow.hidden { display: none !important; }
-        .settings-row input { width: 60px; text-align: center; background: #333; border: 1px solid #555; color: #fff; border-radius: 4px; padding: 4px; }
-        .settings-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #00BCD4; }
-        .graph-toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; } .graph-toggle-item { display: flex; align-items: center; justify-content: space-between; }
-        .color-swatch { width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; border: 1px solid #888; }
-        .settings-actions { display: flex; gap: 10px; margin-top: 10px; }
-        .settings-actions button { flex-grow: 1; padding: 8px; border: none; color: #fff; font-weight: bold; cursor: pointer; border-radius: 4px; }
-        #clearDataBtn { background: #c53030; } #resetSettingsBtn { background: #717171; }
-        .settings-stats { font-size: 13px; color: #ccc; border-top: 1px solid #444; padding-top: 10px; margin-top: 10px; }
-        .settings-footer { text-align: center; font-size: 11px; color: #888; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
-        .settings-footer a { color: #aaa; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; } .settings-footer svg { width: 14px; height: 14px; }
-        .gg-spinner { animation: gg-spinner 1s linear infinite; box-sizing: border-box; position: relative; display: block; transform: scale(var(--ggs,0.7)); width: 16px; height: 16px; border: 2px solid; border-top-color: transparent; border-radius: 50%; }
-        @keyframes gg-spinner { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
-    `)}async function S(){if(!_||!g)return;let e=document.getElementById(`guesslyticsStats`);if(!e)return;let t=await p(),n=g.scales.x.min,r=g.scales.x.max,i=t.overall.filter(e=>{let t=new Date(e.timestamp).getTime();return t>=n&&t<=r});if(i.length<2){e.innerHTML=`<div class="stat-item"><div class="label">Not enough data for stats</div></div>`;return}let a=i[i.length-1],o=i[i.length-2],s=a.rating-o.rating,c=`<div class="value ${s>=0?`positive`:`negative`}">${s>=0?`+`:``}${s}</div>`,l=0,u=0,d=0,f=0,m=i[0].rating;for(let e=1;e<i.length;e++){let t=i[e].rating-i[e-1].rating;t>0&&(l++,d+=t),t<0&&(u++,f+=t),i[e].rating>m&&(m=i[e].rating)}let h=i[i.length-1].rating-i[0].rating,v=i.length-1,y=v>0?(h/v).toFixed(2):`0`,b=`<div class="value ${Number(y)>=0?`positive`:`negative`}">${Number(y)>=0?`+`:``}${y}</div>`,x=l+u>0?Math.round(l/(l+u)*100):0,S=``;x>50&&(S=`positive`),x<50&&(S=`negative`);let C=`<div class="value ${S}">${x}%</div>`,w=l>0?(d/l).toFixed(2):`0`,T=u>0?(f/u).toFixed(2):`0`;e.innerHTML=`
+        <div id="graphWrapper"><div id="guesslyticsStats"></div><canvas id="guesslyticsCanvas"></canvas></div>`,r.innerHTML=``,r.appendChild(a),!document.getElementById(`guesslyticsSettingsPanel`)){let e=document.createElement(`div`);e.id=`guesslyticsSettingsPanel`,document.body.appendChild(e)}document.getElementById(`guesslyticsToggleBtn`).onclick=()=>{b=!b,a.classList.toggle(`expanded`,b),document.getElementById(`guesslyticsToggleBtn`).innerHTML=b?i.COLLAPSE:i.EXPAND,document.getElementById(`guesslyticsStats`).style.display=b?`flex`:`none`,b&&T()},document.getElementById(`guesslyticsSettingsBtn`).onclick=()=>{document.getElementById(`guesslyticsSettingsPanel`).style.display=`block`,E(t)},document.getElementById(`guesslyticsResyncBtn`).onclick=async()=>{await n()},v(t)}async function T(){if(!b||!y)return;let e=document.getElementById(`guesslyticsStats`);if(!e)return;let t=await m(),n=y.scales.x.min,r=y.scales.x.max,i=t.overall.filter(e=>{let t=new Date(e.timestamp).getTime();return t>=n&&t<=r});if(i.length<2){e.innerHTML=`<div class="stat-item"><div class="label">Not enough data for stats</div></div>`;return}let a=i[i.length-1],o=i[i.length-2],s=a.rating-o.rating,c=`<div class="value ${s>=0?`positive`:`negative`}">${s>=0?`+`:``}${s}</div>`,l=0,u=0,d=0,f=0,p=i[0].rating;for(let e=1;e<i.length;e++){let t=i[e].rating-i[e-1].rating;t>0&&(l++,d+=t),t<0&&(u++,f+=t),i[e].rating>p&&(p=i[e].rating)}let h=i[i.length-1].rating-i[0].rating,g=i.length-1,_=g>0?(h/g).toFixed(2):`0`,v=`<div class="value ${Number(_)>=0?`positive`:`negative`}">${Number(_)>=0?`+`:``}${_}</div>`,x=l+u>0?Math.round(l/(l+u)*100):0,S=``;x>50&&(S=`positive`),x<50&&(S=`negative`);let C=`<div class="value ${S}">${x}%</div>`,w=l>0?(d/l).toFixed(2):`0`,T=u>0?(f/u).toFixed(2):`0`;e.innerHTML=`
         <div class="stat-item">${c}<div class="label">Last Change</div></div>
-        <div class="stat-item">${b}<div class="label">Avg. Net/Game</div></div>
+        <div class="stat-item">${v}<div class="label">Avg. Net/Game</div></div>
         <div class="stat-item">${C}<div class="label">Win Rate</div></div>
         <div class="stat-item"><div class="value positive">+${w}</div><div class="label">Avg Gain</div></div>
         <div class="stat-item"><div class="value negative">${T}</div><div class="label">Avg Loss</div></div>
-        <div class="stat-item"><div class="value">${m}</div><div class="label">Peak Rating</div></div>`}async function C(e){s.log(`Rendering settings panel.`);let t=document.getElementById(`guesslyticsSettingsPanel`);if(!t)return;let r=await p(),o=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),c={points:r.overall.length,oldest:r.overall.length>0?d(r.overall[0].timestamp):`N/A`,newest:r.overall.length>0?d(r.overall[r.overall.length-1].timestamp):`N/A`,lastSync:d(o?.lastSyncTimestamp??null)};t.innerHTML=`
+        <div class="stat-item"><div class="value">${p}</div><div class="label">Peak Rating</div></div>`}async function E(e){s.log(`Rendering settings panel.`);let t=document.getElementById(`guesslyticsSettingsPanel`);if(!t)return;let r=await m(),o=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),c={points:r.overall.length,oldest:r.overall.length>0?f(r.overall[0].timestamp):`N/A`,newest:r.overall.length>0?f(r.overall[r.overall.length-1].timestamp):`N/A`,lastSync:f(o?.lastSyncTimestamp??null)};t.innerHTML=`
         <div id="guesslyticsSettingsOverlay"></div>
         <div id="guesslyticsSettingsModal">
             <h2>Guesslytics Settings</h2>
@@ -97,10 +353,10 @@
             <button id="clearDataBtn">Clear All Data</button></div>
             <div class="settings-footer"><a href="https://github.com/Avanatiker/Guesslytics" target="_blank">
             ${i.GITHUB} Guesslytics v${GM_info.script.version} by Constructor</a></div>
-        </div>`,document.getElementById(`guesslyticsSettingsOverlay`).onclick=()=>t.style.display=`none`;let l=document.getElementById(`backfillDaysRow`),u=document.getElementById(`backfillFull`);l&&u&&(l.style.display=e.backfillFullHistory?`none`:`flex`,u.onchange=()=>{l.style.display=u.checked?`none`:`flex`}),document.dispatchEvent(new CustomEvent(`guesslyticsSettingsRendered`))}async function w(e,t){let n=!g||g.data.datasets.every(e=>e.data.length===0),r=g&&!n?{min:g.scales.x.min,max:g.scales.x.max}:null;g&&g.destroy();let i=document.getElementById(`guesslyticsCanvas`);if(!i)return;i.style.cursor=`grab`;let o=e.overall.map(e=>new Date(e.timestamp).getTime()),s=e.overall.length>0?Math.min(...o):null,c=e.overall.length>0?Math.max(...o):null,l=Object.keys(a).map(n=>{let r=a[n],o=i.getContext(`2d`).createLinearGradient(0,0,0,_?400:210);return o.addColorStop(0,`${r.color}55`),o.addColorStop(1,`${r.color}05`),{label:r.label,data:e[n].map(e=>({x:new Date(e.timestamp).getTime(),y:e.rating,gameId:e.gameId})),borderColor:r.color,borderWidth:n===`overall`?2.5:2,pointRadius:0,pointHoverRadius:6,pointHoverBorderColor:`#fff`,pointHoverBackgroundColor:r.color,fill:t.showAreaFill,backgroundColor:o,tension:0,hidden:!t.visibleDatasets[n]}}),u=!1,f={animation:!1,responsive:!0,maintainAspectRatio:!1,interaction:{mode:`x`,intersect:!1},onClick:(e,t)=>{if(u||t.length===0)return;let{datasetIndex:n,index:r}=t[0],i=g.data.datasets[n].data[r].gameId;i&&window.open(`https://www.geoguessr.com/duels/${i}`,`_blank`)},plugins:{title:{display:!1},legend:{display:!1},tooltip:{position:`nearest`,callbacks:{title:e=>d(e[0].parsed.x),label:()=>null,afterBody:e=>{let t=new Set;return e.reduce((e,n)=>(t.has(n.dataset.label)||(t.add(n.dataset.label),e.push(`${n.dataset.label}: ${n.parsed.y}`)),e),[])}}}},scales:{x:{type:`time`,time:{unit:`day`},ticks:{color:`#aaa`},grid:{color:`rgba(255,255,255,0.1)`}},y:{ticks:{color:`#aaa`},grid:{color:`rgba(255,255,255,0.1)`}}}};if(r?.min&&r?.max)f.scales.x.min=r.min,f.scales.x.max=r.max;else if(e.overall.length>0){let n=new Date(e.overall[e.overall.length-1].timestamp).getTime(),r=new Date(n);r.setDate(r.getDate()-(t.initialZoomDays||7)),f.scales.x.min=r.getTime(),f.scales.x.max=n}let p={id:`crosshairLine`,afterDatasetsDraw:e=>{let{tooltip:t,ctx:n,chartArea:{top:r,bottom:i}}=e;if(t.getActiveElements()?.length>0){let e=t.getActiveElements()[0].element.x;n.save(),n.beginPath(),n.moveTo(e,r),n.lineTo(e,i),n.lineWidth=1,n.strokeStyle=`rgba(255, 255, 255, 0.5)`,n.stroke(),n.restore()}}};g=new Chart(i,{type:`line`,data:{datasets:l},options:f,plugins:[p]});let m=!1,h=0,v=0,y=()=>{m&&(m=!1,i.style.cursor=`grab`,_&&S(),setTimeout(()=>u=!1,50))};i.onmousedown=e=>{m=!0,h=e.clientX,v=e.clientX,u=!1,i.style.cursor=`grabbing`},i.onmouseup=y,i.onmouseleave=y,i.onmousemove=t=>{if(!m)return;Math.abs(t.clientX-v)>5&&(u=!0);let n=t.clientX-h;h=t.clientX;let{scales:r}=g,i=r.x.min-(r.x.max-r.x.min)*(n/r.x.width),a=r.x.max-(r.x.max-r.x.min)*(n/r.x.width);if(e.overall.length>1&&s&&c){if(i<s){let e=s-i;i+=e,a+=e}if(a>c){let e=a-c;i-=e,a-=e}}g.options.scales.x.min=i,g.options.scales.x.max=a,g.update(`none`)},i.onwheel=t=>{t.preventDefault();let n=t.deltaY<0?.85:1.15,{scales:r}=g,i=r.x.getValueForPixel(t.offsetX),a=i-(i-r.x.min)*n,o=i+(r.x.max-i)*n;e.overall.length>1&&s&&c&&(a<s&&(a=s),o>c&&(o=c)),!(o-a<1e3*60*5)&&(g.options.scales.x.min=a,g.options.scales.x.max=o,g.update(`none`),_&&S())},_&&S()}function T(e,t){v&&clearInterval(v),y&&clearInterval(y);let n=f(),r=document.getElementById(`guesslyticsTimer`);if(!r)return;if(!n||e.autoRefreshInterval<=0){r.style.display=`none`;return}r.style.display=`inline`;let i=Date.now()+e.autoRefreshInterval*1e3,a=()=>{let e=Math.round((i-Date.now())/1e3);if(e>0){let t=Math.floor(e/60),n=e%60;r.innerText=t>0?`(Next sync in ${t}m ${n}s)`:`(Next sync in ${n}s)`}};a(),v=window.setInterval(()=>{t(),i=Date.now()+e.autoRefreshInterval*1e3},e.autoRefreshInterval*1e3),y=window.setInterval(a,1e3)}let E=[],D=!1,O=0,k=15e3;async function A(){if(D||E.length===0)return;D=!0,O>0&&(O=Math.max(0,O-100));let e=E.shift();if(e)try{await e()}catch(e){s.log(`Request from queue failed`,{error:e})}D=!1,E.length>0&&setTimeout(A,100)}function j(e){return new Promise((t,n)=>{E.push(()=>e().then(t).catch(n)),D||A()})}async function M(e,t,n=3,r=1e3){s.log(`Executing request`,{url:e,baseApiRequestDelay:t,retries:n,retryDelay:r}),await u(t+O);for(let t=0;t<n;t++)try{return await new Promise((t,n)=>{GM_xmlhttpRequest({method:`GET`,url:e,responseType:`json`,timeout:2e4,onload:r=>{s.log(`Request onload`,{url:e,status:r.status}),r.status>=200&&r.status<300?t(r.response):r.status===429?n(Error(`API rate limit: ${r.status}`)):r.status>=500?n(Error(`API server error: ${r.status}`)):t(null)},onerror:e=>n(Error(`Network Error: ${JSON.stringify(e)}`)),ontimeout:()=>n(Error(`Request timed out`))})})}catch(i){let a=i.message?.includes(`429`);if(a){O=Math.min(k,(O||2e3)*2),s.log(`Rate limited. Increasing delay to ${O}ms.`);let e=document.getElementById(`guesslyticsStatus`);e&&(e.innerHTML=`Rate limited, retrying...`)}if(t===n-1)return s.log(`API request failed after all retries.`,{url:e,error:i.message}),null;let o=(a?Math.max(r,3e3):r)+O;s.log(`API request failed. Retrying in ${o/1e3}s...`,{error:i.message}),await u(o),r*=2}return null}function N(e,t){return j(()=>M(e,t))}function P(e){let t=[];s.log(`Extracting duel games from feed`,{entries:e});for(let n of e)try{if(n.type===7&&typeof n.payload==`string`){let e=JSON.parse(n.payload);t=t.concat(P(e))}else if(n.type===6){let e=typeof n.payload==`string`?JSON.parse(n.payload):n.payload,r=e.gameMode===`Duels`&&e.competitiveGameMode&&e.competitiveGameMode!==`None`;r&&t.push({time:n.time,payload:e})}}catch(e){s.log(`Failed to parse feed entry payload.`,{entry:n,error:e})}return s.log(`Finished extracting duel games`,{games:t}),t}async function F(e,t,n,r,i){s.log(`Processing games from feed entries`,{rawEntries:e});let a=await p(),o=i||new Set(a.overall.map(e=>e.gameId)),c=!1,l=!1,u=P(e);u.sort((e,t)=>new Date(t.time).getTime()-new Date(e.time).getTime());for(let e of u){let i=e.payload.gameId;if(o.has(i)){s.log(`Found existing game in database`,{gameId:i}),l=!0;continue}s.log(`Fetching duel data for game`,{gameId:i});let u=await N(`https://game-server.geoguessr.com/api/duels/${i}`,n);if(!u){s.log(`No duel data found for game`,{gameId:i});continue}let d=u.teams.flatMap(e=>e.players).find(e=>e.playerId===t),f=d?.progressChange?.rankedSystemProgress;if(f){s.log(`Found progress for game`,{gameId:i,progress:f});let t=h(f.gameMode),n={timestamp:e.time,gameId:i};for(let e in f.ratingAfter!=null&&a.overall.push({...n,rating:f.ratingAfter}),t&&f.gameModeRatingAfter!=null&&a[t].push({...n,rating:f.gameModeRatingAfter}),c=!0,o.add(i),a)a[e].sort((e,t)=>new Date(e.timestamp).getTime()-new Date(t.timestamp).getTime());await m(a),r&&await r()}}return{newDataAdded:c,foundExistingGame:l}}async function I(e,t,r){let{initialUrl:i=`https://www.geoguessr.com/api/v4/feed/private`,maxPages:a=500,cutoffDate:o,onGameProcessed:c,onPageProcessed:l,statusUpdateCallback:d}=r,f,m=!1,h=0,g=!1,_=!1,v=await p(),y=new Set(v.overall.map(e=>e.gameId)),b=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1});s.log(`Starting feed processing`,{backfillStateEnded:b.ended,existingGamesCount:y.size,hasCutoffDate:!!o,cutoffDate:o?o.toISOString():`none`});let x=await N(i,t);if(!x)return s.log(`Failed to fetch initial feed page.`),{newDataAdded:m,reachedEnd:g,pagesProcessed:h};let S=await F(x.entries,e,t,c,y);if(m=S.newDataAdded,_=S.foundExistingGame,l&&await l(await p()),f=x.paginationToken,!f)return s.log(`Reached the end of the feed on the first page.`),g=!0,{newDataAdded:m,reachedEnd:g,pagesProcessed:h};if(_&&b.ended)return s.log(`Found existing game on first page and history end was reached. Stopping feed processing.`),{newDataAdded:m,reachedEnd:!0,pagesProcessed:h};if(o){let e=await p(),t=e.overall[0];if(t&&new Date(t.timestamp)<o)return s.log(`Reached cutoff date after first page. Stopping feed processing.`,{cutoffDate:o.toISOString(),oldestGameDate:t?new Date(t.timestamp).toISOString():`N/A`}),{newDataAdded:m,reachedEnd:!1,pagesProcessed:h}}for(;f&&h<a;){if(_&&b.ended){s.log(`Found existing game and history end was reached. Stopping feed processing.`);break}if(h++,s.log(`Processing feed page ${h}`),d){let e=await p(),t=e.overall[0],n=t?new Date(t.timestamp).toLocaleDateString():`N/A`;d(`Synced until ${n} (${e.overall.length} games)`)}let n=await N(`https://www.geoguessr.com/api/v4/feed/private?paginationToken=${f}`,t);if(!n){s.log(`No feed data on page ${h}, stopping.`);break}let r=await F(n.entries,e,t,c,y);if(r.newDataAdded&&(m=!0),r.foundExistingGame&&(_=!0,s.log(`Found existing game on page`,{page:h,backfillStateEnded:b.ended}),b.ended)){s.log(`Found existing game and history end was reached. Stopping feed processing.`);break}if(l&&await l(await p()),o){let e=await p(),t=e.overall[0];if(t&&new Date(t.timestamp)<o){s.log(`Reached cutoff date. Stopping feed processing.`,{cutoffDate:o.toISOString(),oldestGameDate:t?new Date(t.timestamp).toISOString():`N/A`}),g=!1;break}}if(f=n.paginationToken,!f){s.log(`Reached the end of the feed.`),g=!0;break}await u(t)}return s.log(`Completed feed processing`,{pagesProcessed:h,newDataAdded:m,reachedEnd:g,foundExistingGame:_,backfillStateEnded:b.ended,stoppedDueToCutoff:o?`possibly`:`no`}),{newDataAdded:m,reachedEnd:g,pagesProcessed:h}}async function L(e,t,r,i,a){s.log(`Checking for updates`);let o=await p(),c=o.overall[0],l=c?new Date(c.timestamp).toLocaleDateString():`N/A`;r(!0,`Syncing data... (${o.overall.length} games)`,i,a);try{let o=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),c=i.backfillFullHistory?void 0:new Date;c&&(c.setDate(c.getDate()-i.backfillDays),s.log(`Using cutoff date for updates check`,{cutoffDate:c.toISOString(),backfillDays:i.backfillDays}));let l=await I(e,t,{cutoffDate:c,onGameProcessed:async()=>{let e=await p();await w(e,i);let t=e.overall[0],n=t?new Date(t.timestamp).toLocaleDateString():`N/A`;r(!0,`Synced until ${n} (${e.overall.length} games)`,i,a)},onPageProcessed:async e=>{},statusUpdateCallback:e=>{r(!0,e,i,a)}}),{newDataAdded:u,reachedEnd:d}=l;s.log(`Update check completed`,{newDataAdded:u,reachedEnd:d,pagesProcessed:l.pagesProcessed,backfillStateEnded:o.ended});let f=await p(),m=f.overall[0],h=m?new Date(m.timestamp).toLocaleDateString():`N/A`,g=u?`✓ Synced until ${h} (${f.overall.length} games)`:`✓ Up to date (${f.overall.length} games)`;return r(!1,g,i,a),await GM_setValue(n,{...o,lastSyncTimestamp:Date.now(),ended:d?!0:o.ended}),u}catch(e){return s.log(`Background refresh failed.`,{error:e}),r(!1,`Error`,i,a),!1}}
+        </div>`,document.getElementById(`guesslyticsSettingsOverlay`).onclick=()=>t.style.display=`none`;let l=document.getElementById(`backfillDaysRow`),u=document.getElementById(`backfillFull`);l&&u&&(l.style.display=e.backfillFullHistory?`none`:`flex`,u.onchange=()=>{l.style.display=u.checked?`none`:`flex`}),document.dispatchEvent(new CustomEvent(`guesslyticsSettingsRendered`))}function D(e,t,n){return Object.keys(a).map(r=>{let i=a[r],o=n.getContext(`2d`).createLinearGradient(0,0,0,b?400:210);return o.addColorStop(0,`${i.color}55`),o.addColorStop(1,`${i.color}05`),{label:i.label,data:e[r].map(e=>({x:new Date(e.timestamp).getTime(),y:e.rating,gameId:e.gameId})),borderColor:i.color,borderWidth:r===`overall`?2.5:2,pointRadius:0,pointHoverRadius:6,pointHoverBorderColor:`#fff`,pointHoverBackgroundColor:i.color,fill:t.showAreaFill,backgroundColor:o,tension:0,hidden:!t.visibleDatasets[r]}})}function O(){return{id:`crosshairLine`,afterDatasetsDraw:e=>{let{tooltip:t,ctx:n,chartArea:{top:r,bottom:i}}=e;if(t.getActiveElements()?.length>0){let e=t.getActiveElements()[0].element.x;n.save(),n.beginPath(),n.moveTo(e,r),n.lineTo(e,i),n.lineWidth=1,n.strokeStyle=`rgba(255, 255, 255, 0.5)`,n.stroke(),n.restore()}}}}function k(e,t,n,r,i,a){let o={animation:!1,responsive:!0,maintainAspectRatio:!1,interaction:{mode:`x`,intersect:!1},onClick:(e,t)=>{if(a.value||t.length===0)return;let{datasetIndex:n,index:r}=t[0],i=y.data.datasets[n].data[r].gameId;i&&window.open(`https://www.geoguessr.com/duels/${i}`,`_blank`)},plugins:{title:{display:!1},legend:{display:!1},tooltip:{position:`nearest`,callbacks:{title:e=>f(e[0].parsed.x),label:()=>null,afterBody:e=>{let t=new Set;return e.reduce((e,n)=>(t.has(n.dataset.label)||(t.add(n.dataset.label),e.push(`${n.dataset.label}: ${n.parsed.y}`)),e),[])}}}},scales:{x:{type:`time`,time:{unit:`day`},ticks:{color:`#aaa`},grid:{color:`rgba(255,255,255,0.1)`}},y:{ticks:{color:`#aaa`},grid:{color:`rgba(255,255,255,0.1)`}}}};if(n?.min&&n?.max)o.scales.x.min=n.min,o.scales.x.max=n.max;else if(e.overall.length>0){let n=new Date(e.overall[e.overall.length-1].timestamp).getTime(),r=new Date(n);r.setDate(r.getDate()-(t.initialZoomDays||7)),o.scales.x.min=r.getTime(),o.scales.x.max=n}return o}function A(e,t,n,r,i){let a=!1,o=0,s=0,c=()=>{a&&(a=!1,e.style.cursor=`grab`,b&&T(),setTimeout(()=>i.value=!1,50))};e.onmousedown=t=>{a=!0,o=t.clientX,s=t.clientX,i.value=!1,e.style.cursor=`grabbing`},e.onmouseup=c,e.onmouseleave=c,e.onmousemove=e=>{if(!a)return;Math.abs(e.clientX-s)>5&&(i.value=!0);let c=e.clientX-o;o=e.clientX;let{scales:l}=y,u=l.x.min-(l.x.max-l.x.min)*(c/l.x.width),d=l.x.max-(l.x.max-l.x.min)*(c/l.x.width);if(t.overall.length>1&&n&&r){if(u<n){let e=n-u;u+=e,d+=e}if(d>r){let e=d-r;u-=e,d-=e}}y.options.scales.x.min=u,y.options.scales.x.max=d,y.update(`none`)},e.onwheel=e=>{e.preventDefault();let i=e.deltaY<0?.85:1.15,{scales:a}=y,o=a.x.getValueForPixel(e.offsetX),s=o-(o-a.x.min)*i,c=o+(a.x.max-o)*i;t.overall.length>1&&n&&r&&(s<n&&(s=n),c>r&&(c=r)),!(c-s<1e3*60*5)&&(y.options.scales.x.min=s,y.options.scales.x.max=c,y.update(`none`),b&&T())}}async function j(e,t){let n=!y||y.data.datasets.every(e=>e.data.length===0),r=y&&!n?{min:y.scales.x.min,max:y.scales.x.max}:null;y&&y.destroy();let i=document.getElementById(`guesslyticsCanvas`);if(!i)return;i.style.cursor=`grab`;let a=e.overall.map(e=>new Date(e.timestamp).getTime()),o=e.overall.length>0?Math.min(...a):null,s=e.overall.length>0?Math.max(...a):null,c={value:!1},l=D(e,t,i),u=k(e,t,r,o,s,c),d=O();y=new Chart(i,{type:`line`,data:{datasets:l},options:u,plugins:[d]}),A(i,e,o,s,c),b&&T()}function M(e,t){x&&clearInterval(x),S&&clearInterval(S);let n=p(),r=document.getElementById(`guesslyticsTimer`);if(!r)return;if(!n||e.autoRefreshInterval<=0){r.style.display=`none`;return}r.style.display=`inline`;let i=Date.now()+e.autoRefreshInterval*1e3,a=()=>{let e=Math.round((i-Date.now())/1e3);if(e>0){let t=Math.floor(e/60),n=e%60;r.innerText=t>0?`(Next sync in ${t}m ${n}s)`:`(Next sync in ${n}s)`}};a(),x=window.setInterval(()=>{t(),i=Date.now()+e.autoRefreshInterval*1e3},e.autoRefreshInterval*1e3),S=window.setInterval(a,1e3)}let N=[],P=!1,F=0,I=15e3;async function L(){if(P||N.length===0)return;P=!0,F>0&&(F=Math.max(0,F-100));let e=N.shift();if(e)try{await e()}catch(e){c(e,`Request from queue failed`,{silent:!0})}P=!1,N.length>0&&setTimeout(L,100)}function R(e){return new Promise((t,n)=>{N.push(()=>e().then(t).catch(n)),P||L()})}async function z(e,t,n=3,r=1e3){s.log(`Executing request`,{url:e,baseApiRequestDelay:t,retries:n,retryDelay:r}),await d(t+F);for(let t=0;t<n;t++)try{return await new Promise((t,n)=>{GM_xmlhttpRequest({method:`GET`,url:e,responseType:`json`,timeout:2e4,onload:r=>{s.log(`Request onload`,{url:e,status:r.status}),r.status>=200&&r.status<300?t(r.response):r.status===429?n(Error(`API rate limit: ${r.status}`)):r.status>=500?n(Error(`API server error: ${r.status}`)):t(null)},onerror:e=>n(Error(`Network Error: ${JSON.stringify(e)}`)),ontimeout:()=>n(Error(`Request timed out`))})})}catch(i){let a=i.message?.includes(`429`);if(a){F=Math.min(I,(F||2e3)*2),s.log(`Rate limited. Increasing delay to ${F}ms.`);let e=document.getElementById(`guesslyticsStatus`);e&&(e.innerHTML=`Rate limited, retrying...`)}if(t===n-1)return c(i,`API request failed after all retries for ${e}`,{silent:!0}),null;let o=(a?Math.max(r,3e3):r)+F;s.log(`API request failed. Retrying in ${o/1e3}s...`,{error:i.message}),await d(o),r*=2}return null}function B(e,t){return R(()=>z(e,t))}function V(e){let t=[];s.log(`Extracting duel games from feed`,{entries:e});for(let n of e)try{if(n.type===7&&typeof n.payload==`string`){let e=JSON.parse(n.payload);t=t.concat(V(e))}else if(n.type===6){let e=typeof n.payload==`string`?JSON.parse(n.payload):n.payload,r=e.gameMode===`Duels`&&e.competitiveGameMode&&e.competitiveGameMode!==`None`;r&&t.push({time:n.time,payload:e})}}catch(e){c(e,`Failed to parse feed entry payload`,{silent:!0})}return s.log(`Finished extracting duel games`,{games:t}),t}async function H(e,t,n,r,i){s.log(`Processing games from feed entries`,{rawEntries:e});let a=await m(),o=i||new Set(a.overall.map(e=>e.gameId)),c=!1,l=!1,u=V(e);u.sort((e,t)=>new Date(t.time).getTime()-new Date(e.time).getTime());for(let e of u){let i=e.payload.gameId;if(o.has(i)){s.log(`Found existing game in database`,{gameId:i}),l=!0;continue}s.log(`Fetching duel data for game`,{gameId:i});let u=await B(`https://game-server.geoguessr.com/api/duels/${i}`,n);if(!u){s.log(`No duel data found for game`,{gameId:i});continue}let d=u.teams.flatMap(e=>e.players).find(e=>e.playerId===t),f=d?.progressChange?.rankedSystemProgress;if(f){s.log(`Found progress for game`,{gameId:i,progress:f});let t=g(f.gameMode),n={timestamp:e.time,gameId:i};for(let e in f.ratingAfter!=null&&a.overall.push({...n,rating:f.ratingAfter}),t&&f.gameModeRatingAfter!=null&&a[t].push({...n,rating:f.gameModeRatingAfter}),c=!0,o.add(i),a)a[e].sort((e,t)=>new Date(e.timestamp).getTime()-new Date(t.timestamp).getTime());await h(a),r&&await r()}}return{newDataAdded:c,foundExistingGame:l}}async function U(e,t,r){let{initialUrl:i=`https://www.geoguessr.com/api/v4/feed/private`,maxPages:a=500,cutoffDate:o,onGameProcessed:c,onPageProcessed:l,statusUpdateCallback:u}=r,f,p=!1,h=0,g=!1,_=!1,v=await m(),y=new Set(v.overall.map(e=>e.gameId)),b=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1});s.log(`Starting feed processing`,{backfillStateEnded:b.ended,existingGamesCount:y.size,hasCutoffDate:!!o,cutoffDate:o?o.toISOString():`none`});let x=await B(i,t);if(!x)return s.log(`Failed to fetch initial feed page.`),{newDataAdded:p,reachedEnd:g,pagesProcessed:h};let S=await H(x.entries,e,t,c,y);if(p=S.newDataAdded,_=S.foundExistingGame,l&&await l(await m()),f=x.paginationToken,!f)return s.log(`Reached the end of the feed on the first page.`),g=!0,{newDataAdded:p,reachedEnd:g,pagesProcessed:h};if(_&&b.ended)return s.log(`Found existing game on first page and history end was reached. Stopping feed processing.`),{newDataAdded:p,reachedEnd:!0,pagesProcessed:h};if(o){let e=await m(),t=e.overall[0];if(t&&new Date(t.timestamp)<o)return s.log(`Reached cutoff date after first page. Stopping feed processing.`,{cutoffDate:o.toISOString(),oldestGameDate:t?new Date(t.timestamp).toISOString():`N/A`}),{newDataAdded:p,reachedEnd:!1,pagesProcessed:h}}for(;f&&h<a;){if(_&&b.ended){s.log(`Found existing game and history end was reached. Stopping feed processing.`);break}if(h++,s.log(`Processing feed page ${h}`),u){let e=await m(),t=e.overall[0],n=t?new Date(t.timestamp).toLocaleDateString():`N/A`;u(`Synced until ${n} (${e.overall.length} games)`)}let n=await B(`https://www.geoguessr.com/api/v4/feed/private?paginationToken=${f}`,t);if(!n){s.log(`No feed data on page ${h}, stopping.`);break}let r=await H(n.entries,e,t,c,y);if(r.newDataAdded&&(p=!0),r.foundExistingGame&&(_=!0,s.log(`Found existing game on page`,{page:h,backfillStateEnded:b.ended}),b.ended)){s.log(`Found existing game and history end was reached. Stopping feed processing.`);break}if(l&&await l(await m()),o){let e=await m(),t=e.overall[0];if(t&&new Date(t.timestamp)<o){s.log(`Reached cutoff date. Stopping feed processing.`,{cutoffDate:o.toISOString(),oldestGameDate:t?new Date(t.timestamp).toISOString():`N/A`}),g=!1;break}}if(f=n.paginationToken,!f){s.log(`Reached the end of the feed.`),g=!0;break}await d(t)}return s.log(`Completed feed processing`,{pagesProcessed:h,newDataAdded:p,reachedEnd:g,foundExistingGame:_,backfillStateEnded:b.ended,stoppedDueToCutoff:o?`possibly`:`no`}),{newDataAdded:p,reachedEnd:g,pagesProcessed:h}}async function W(e,t,r,i,a,o={}){let{isBackfill:l=!1,initialStatusMessage:u,logPrefix:d=`Sync`}=o;s.log(`${d}: Starting operation`);let f=await m();r(!0,u||`Syncing data... (${f.overall.length} games)`,i,a);try{let o=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),c=i.backfillFullHistory?void 0:new Date;c&&(c.setDate(c.getDate()-i.backfillDays),s.log(`${d}: Using cutoff date`,{cutoffDate:c.toISOString(),backfillDays:i.backfillDays}));let u=await U(e,t,{cutoffDate:c,onGameProcessed:async()=>{let e=await m();await j(e,i);let t=e.overall[0],n=t?new Date(t.timestamp).toLocaleDateString():`N/A`;r(!0,`Synced until ${n} (${e.overall.length} games)`,i,a)},onPageProcessed:async e=>{},statusUpdateCallback:e=>{r(!0,e,i,a)}}),{newDataAdded:f,reachedEnd:p,pagesProcessed:h}=u;s.log(`${d}: Operation completed`,{newDataAdded:f,reachedEnd:p,pagesProcessed:h,backfillStateEnded:o.ended});let g=await m(),_=g.overall[0],v=_?new Date(_.timestamp).toLocaleDateString():`N/A`,y;return y=l||f?`✓ Synced until ${v} (${g.overall.length} games)`:`✓ Up to date (${g.overall.length} games)`,r(!1,y,i,a),await GM_setValue(n,{lastLimitDays:i.backfillFullHistory?9999:i.backfillDays,lastSyncTimestamp:Date.now(),ended:l?p:p?!0:o.ended}),await j(g,i),u}catch(e){return c(e,`${d}: Operation failed`,{setSyncState:r,settings:i,callback:a}),{newDataAdded:!1,reachedEnd:!1,pagesProcessed:0}}}async function G(e,t,n,r,i){let a=await W(e,t,n,r,i,{isBackfill:!1,logPrefix:`Update check`});return a.newDataAdded}
 /**
 * Guesslytics - GeoGuessr Rating Tracker
 * @author Constructor
 * @license GPL-3.0+
 */
-(async()=>{"use strict";let i={...r},a=!1,o=!1,u=null;async function d(){if(o||!u){s.log(`Sync request skipped (already in progress or no user ID).`);return}let e=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1});o=!0;let t=await p(),r=t.overall[0],a=r?new Date(r.timestamp).toLocaleDateString():`N/A`;b(!0,`Syncing data... (${t.overall.length} games)`,i,m),s.log(`Starting history backfill.`);let c=!1,l=0,d=i.backfillFullHistory?void 0:new Date;d&&d.setDate(d.getDate()-i.backfillDays);try{s.log(`Starting history backfill process`,{backfillFullHistory:i.backfillFullHistory,backfillDays:i.backfillDays,cutoffDate:d?d.toISOString():`none`,backfillStateEnded:e.ended});let t=await I(u,i.apiRequestDelay,{cutoffDate:d,onGameProcessed:async()=>{let e=await p();await w(e,i);let t=e.overall[0],n=t?new Date(t.timestamp).toLocaleDateString():`N/A`;b(!0,`Synced until ${n} (${e.overall.length} games)`,i,m)},onPageProcessed:async e=>{},statusUpdateCallback:e=>{b(!0,e,i,m)}});c=t.reachedEnd,l=t.pagesProcessed,s.log(`History backfill completed`,{newDataAdded:t.newDataAdded,reachedEnd:c,pagesProcessed:l,gamesCount:(await p()).overall.length})}catch(e){s.log(`Failed during history backfill process.`,{error:e}),b(!1,`Error during sync`,i,m)}finally{s.log(`Updating backfill state`,{lastLimitDays:i.backfillFullHistory?9999:i.backfillDays,ended:c,previousEnded:e.ended}),await GM_setValue(n,{lastLimitDays:i.backfillFullHistory?9999:i.backfillDays,lastSyncTimestamp:Date.now(),ended:c}),o=!1;let t=await p(),r=t.overall[0],a=r?new Date(r.timestamp).toLocaleDateString():`N/A`;b(!1,`✓ Synced until ${a} (${t.overall.length} games)`,i,m),await w(t,i)}}async function m(){if(!u||o)return;o=!0;let e=await L(u,i.apiRequestDelay,b,i,m);e&&await w(await p(),i),o=!1}function h(){let a=async()=>{s.log(`Attaching settings panel handlers.`);let o={...i};document.getElementById(`clearDataBtn`).onclick=async()=>{confirm(`Are you sure you want to delete all stored rating data? This cannot be undone.`)&&(s.log(`Clearing all data.`),await GM_setValue(t,{overall:[],moving:[],noMove:[],nmpz:[]}),await GM_setValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),window.location.reload())},document.getElementById(`resetSettingsBtn`).onclick=async()=>{confirm(`Are you sure you want to reset all settings to their defaults?`)&&(s.log(`Resetting settings.`),i={...r},await GM_setValue(e,i),await C(i),await a())};let c=document.querySelectorAll(`#guesslyticsSettingsModal input`);c.forEach(t=>{t.onchange=async()=>{s.log(`Setting changed: ${t.id}`),i.showAreaFill=document.getElementById(`showAreaFill`).checked,Object.keys(i.visibleDatasets).forEach(e=>{let t=document.getElementById(`ds_${e}`);t&&(i.visibleDatasets[e]=t.checked)}),i.backfillFullHistory=document.getElementById(`backfillFull`).checked,i.backfillDays=parseInt(document.getElementById(`backfillDays`).value,10),i.initialZoomDays=parseInt(document.getElementById(`initialZoomDays`).value,10),i.autoRefreshInterval=parseInt(document.getElementById(`autoRefreshInterval`).value,10),i.apiRequestDelay=parseInt(document.getElementById(`apiRequestDelay`).value,10),i.backgroundOpacity=parseInt(document.getElementById(`bgOpacity`).value,10),i.verboseLogging=document.getElementById(`verboseLogging`).checked,s.setLogging(i.verboseLogging),await GM_setValue(e,i);let r=document.getElementById(`guesslyticsContainer`);r&&(r.style.backgroundColor=`rgba(28,28,28,${i.backgroundOpacity/100})`),await w(await p(),i),T(i,m);let a=i.backfillFullHistory?9999:i.backfillDays,c=o.backfillFullHistory?9999:o.backfillDays,l=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),u=i.backfillFullHistory&&!o.backfillFullHistory;u?(s.log(`Changed from limited to full history. Resetting ended flag and triggering new backfill.`),await GM_setValue(n,{...l,ended:!1}),await d()):a>c&&(l.ended&&(s.log(`Increased cutoff date. Resetting ended flag and triggering new backfill.`),await GM_setValue(n,{...l,ended:!1})),await d())}})};document.addEventListener(`guesslyticsSettingsRendered`,a)}async function g(){if(a)return;if(a=!0,s.log(`Guesslytics v${GM_info.script.version} Initializing...`),i=await c(),await l(()=>document.querySelector(`[class*="division-header_right"]`)!==null),u=f(),!u){s.log(`Could not get user ID. Aborting.`);return}x(u,i,()=>d()),await w(await p(),i),h();let e=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),t=await p(),r=t.overall.length===0&&!e.lastSyncTimestamp&&!e.ended;r?(s.log(`No data found, starting initial history backfill.`),await d()):(s.log(`Found existing data, checking for recent updates.`),await m()),T(i,m)}let _=new MutationObserver(e=>{for(let t of e)if(t.type===`childList`){let e=window.location.pathname===`/multiplayer`,t=document.getElementById(`guesslyticsContainer`);e&&!t?g():e||(a=!1);break}});_.observe(document.body,{childList:!0,subtree:!0}),window.location.pathname===`/multiplayer`&&g()})()})();
+(async()=>{"use strict";let i={...r},a=!1,o=!1,c=null;async function d(){if(o||!c){s.log(`Sync request skipped (already in progress or no user ID).`);return}o=!0;try{await W(c,i.apiRequestDelay,C,i,f,{isBackfill:!0,initialStatusMessage:`Starting history backfill...`,logPrefix:`History backfill`})}finally{o=!1}}async function f(){if(!c||o)return;o=!0;let e=await G(c,i.apiRequestDelay,C,i,f);e&&await j(await m(),i),o=!1}function h(){let a=async()=>{s.log(`Attaching settings panel handlers.`);let o={...i};document.getElementById(`clearDataBtn`).onclick=async()=>{confirm(`Are you sure you want to delete all stored rating data? This cannot be undone.`)&&(s.log(`Clearing all data.`),await GM_setValue(t,{overall:[],moving:[],noMove:[],nmpz:[]}),await GM_setValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),window.location.reload())},document.getElementById(`resetSettingsBtn`).onclick=async()=>{confirm(`Are you sure you want to reset all settings to their defaults?`)&&(s.log(`Resetting settings.`),i={...r},await GM_setValue(e,i),await E(i),await a())};let c=document.querySelectorAll(`#guesslyticsSettingsModal input`);c.forEach(t=>{t.onchange=async()=>{s.log(`Setting changed: ${t.id}`),i.showAreaFill=document.getElementById(`showAreaFill`).checked,Object.keys(i.visibleDatasets).forEach(e=>{let t=document.getElementById(`ds_${e}`);t&&(i.visibleDatasets[e]=t.checked)}),i.backfillFullHistory=document.getElementById(`backfillFull`).checked,i.backfillDays=parseInt(document.getElementById(`backfillDays`).value,10),i.initialZoomDays=parseInt(document.getElementById(`initialZoomDays`).value,10),i.autoRefreshInterval=parseInt(document.getElementById(`autoRefreshInterval`).value,10),i.apiRequestDelay=parseInt(document.getElementById(`apiRequestDelay`).value,10),i.backgroundOpacity=parseInt(document.getElementById(`bgOpacity`).value,10),i.verboseLogging=document.getElementById(`verboseLogging`).checked,s.setLogging(i.verboseLogging),await GM_setValue(e,i);let r=document.getElementById(`guesslyticsContainer`);r&&(r.style.backgroundColor=`rgba(28,28,28,${i.backgroundOpacity/100})`),await j(await m(),i),M(i,f);let a=i.backfillFullHistory?9999:i.backfillDays,c=o.backfillFullHistory?9999:o.backfillDays,l=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),u=i.backfillFullHistory&&!o.backfillFullHistory;u?(s.log(`Changed from limited to full history. Resetting ended flag and triggering new backfill.`),await GM_setValue(n,{...l,ended:!1}),await d()):a>c&&(l.ended&&(s.log(`Increased cutoff date. Resetting ended flag and triggering new backfill.`),await GM_setValue(n,{...l,ended:!1})),await d())}})};document.addEventListener(`guesslyticsSettingsRendered`,a)}async function g(){if(a)return;if(a=!0,s.log(`Guesslytics v${GM_info.script.version} Initializing...`),i=await l(),await u(()=>document.querySelector(`[class*="division-header_right"]`)!==null),c=p(),!c){s.log(`Could not get user ID. Aborting.`);return}w(c,i,()=>d()),await j(await m(),i),h();let e=await GM_getValue(n,{lastLimitDays:0,lastSyncTimestamp:null,ended:!1}),t=await m(),r=t.overall.length===0&&!e.lastSyncTimestamp&&!e.ended;r?(s.log(`No data found, starting initial history backfill.`),await d()):(s.log(`Found existing data, checking for recent updates.`),await f()),M(i,f)}let _=new MutationObserver(e=>{for(let t of e)if(t.type===`childList`){let e=window.location.pathname===`/multiplayer`,t=document.getElementById(`guesslyticsContainer`);e&&!t?g():e||(a=!1);break}});_.observe(document.body,{childList:!0,subtree:!0}),window.location.pathname===`/multiplayer`&&g()})()})();

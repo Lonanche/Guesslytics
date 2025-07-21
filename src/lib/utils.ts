@@ -1,7 +1,7 @@
 import { RatingHistory, Settings } from '../types';
 import { DEFAULT_SETTINGS, RATING_HISTORY_KEY, SETTINGS_KEY } from './constants';
 
-// --- Logger ---
+// --- Logger and Error Handling ---
 
 /**
  * A simple logger class to handle verbose logging based on user settings.
@@ -32,9 +32,48 @@ class Logger {
             }
         }
     }
+
+    /**
+     * Logs an error message to the console.
+     * This is always logged regardless of the verbose setting.
+     * @param message The error message to log.
+     * @param error The error object or message.
+     */
+    error(message: string, error?: any) {
+        const errorMessage = error instanceof Error ? error.message : error;
+        console.error(`[Guesslytics] ERROR: ${message}`, errorMessage || '');
+    }
 }
 
 export const logger = new Logger();
+
+/**
+ * Standardized error handling function.
+ * This function logs the error and optionally updates the UI status.
+ * @param error The error object or message.
+ * @param context Additional context about where the error occurred.
+ * @param options Additional options for error handling.
+ */
+export function handleError(
+    error: any, 
+    context: string,
+    options?: {
+        setSyncState?: (syncing: boolean, text?: string, settings?: any, callback?: () => Promise<void>) => void;
+        settings?: any;
+        callback?: () => Promise<void>;
+        silent?: boolean;
+    }
+): void {
+    const errorMessage = error instanceof Error ? error.message : error;
+    
+    // Log the error
+    logger.error(`${context}: ${errorMessage || 'Unknown error'}`, error);
+    
+    // Update UI status if setSyncState is provided
+    if (options?.setSyncState && !options.silent) {
+        options.setSyncState(false, 'Error during operation', options.settings, options.callback);
+    }
+}
 
 // --- User Settings ---
 
@@ -76,7 +115,9 @@ export function waitForReady(condition: () => boolean, timeout = 20000): Promise
         }, 200);
         setTimeout(() => {
             clearInterval(interval);
-            reject(new Error('Guesslytics: Timed out waiting for page element.'));
+            const error = new Error('Timed out waiting for page element.');
+            handleError(error, 'Page initialization', { silent: true });
+            reject(error);
         }, timeout);
     });
 }
@@ -105,7 +146,8 @@ export function getUserId(): string | null {
             JSON.parse(document.getElementById('__NEXT_DATA__')?.innerHTML || '{}')?.props?.accountProps?.account?.user
                 ?.userId || null
         );
-    } catch (_) {
+    } catch (error) {
+        handleError(error, 'Failed to get user ID from page data', { silent: true });
         return null;
     }
 }

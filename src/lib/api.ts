@@ -1,23 +1,41 @@
 import { DuelResponse, FeedResponse, RatingHistory } from '../types';
-import { getModeKey, getStoredData, logger, setStoredData, sleep } from './utils';
+import { getModeKey, getStoredData, handleError, logger, setStoredData, sleep } from './utils';
 import { BACKFILL_STATE_KEY } from './constants';
 import { renderGraph } from './ui';
 
 // --- Request Queue & Rate Limiting State ---
 
-/** A queue to process API requests sequentially, preventing race conditions and simplifying rate-limiting. */
+/**
+ * A queue to process API requests sequentially, preventing race conditions and simplifying rate-limiting.
+ * This ensures that requests are processed one at a time in the order they were added.
+ */
 let requestQueue: (() => Promise<any>)[] = [];
+
+/**
+ * Flag to indicate whether the queue is currently being processed.
+ * This prevents multiple concurrent processing of the queue.
+ */
 let isProcessingQueue = false;
 
-/** Global rate-limiting delay (in ms). If we get a 429, we increase this delay and let it cool down over time. */
+/**
+ * Global rate-limiting delay (in ms). If we get a 429 response, we increase this delay
+ * and let it cool down over time to prevent further rate limiting.
+ */
 let rateLimitDelay = 0;
-const RATE_LIMIT_MAX_DELAY = 15000; // 15 seconds
+
+/**
+ * Maximum delay to apply for rate limiting (15 seconds).
+ * This caps the exponential backoff to prevent excessive delays.
+ */
+const RATE_LIMIT_MAX_DELAY = 15000;
 
 // --- Queue Processing ---
 
 /**
  * Processes the request queue sequentially.
  * Ensures that we only process one request at a time, respecting all delays.
+ * This function is called automatically when a request is added to the queue
+ * and will continue processing until the queue is empty.
  */
 async function processRequestQueue() {
     if (isProcessingQueue || requestQueue.length === 0) return;
@@ -33,7 +51,7 @@ async function processRequestQueue() {
         try {
             await nextRequest();
         } catch (error) {
-            logger.log('Request from queue failed', { error });
+            handleError(error, 'Request from queue failed', { silent: true });
         }
     }
 
@@ -46,12 +64,23 @@ async function processRequestQueue() {
 
 /**
  * Adds a request to the processing queue.
+ * This function wraps API requests in a queue to ensure they are processed sequentially,
+ * which helps prevent rate limiting and race conditions.
+ * 
+ * @template T The expected return type of the request
  * @param requestFn A function that returns a Promise for the API request.
- * @returns A Promise that resolves with the result of the queued request.
+ * @returns A Promise that resolves with the result of the queued request or rejects with any error.
+ * 
+ * @example
+ * // Example usage:
+ * const data = await enqueueRequest(() => fetchApi('https://example.com/api', 250));
  */
 function enqueueRequest<T>(requestFn: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+        // Add the request to the queue, with proper error handling
         requestQueue.push(() => requestFn().then(resolve).catch(reject));
+        
+        // Start processing the queue if it's not already being processed
         if (!isProcessingQueue) {
             processRequestQueue();
         }
@@ -62,12 +91,21 @@ function enqueueRequest<T>(requestFn: () => Promise<T>): Promise<T> {
 
 /**
  * Executes the actual API request with retry logic and exponential backoff.
- * This function is called by the queue processor.
+ * This function is called by the queue processor and handles all the details of making
+ * an API request, including retries, rate limiting, and error handling.
+ * 
+ * Key features:
+ * - Applies configurable delays between requests to prevent rate limiting
+ * - Implements exponential backoff for retries
+ * - Handles different types of errors differently (rate limiting vs. server errors)
+ * - Provides detailed logging for debugging
+ * 
+ * @template T The expected return type of the request
  * @param url The URL to fetch.
- * @param baseApiRequestDelay The base delay from user settings.
- * @param retries Number of retries for failed requests.
- * @param retryDelay Initial delay for retries, which will increase exponentially.
- * @returns A promise that resolves with the fetched data or null.
+ * @param baseApiRequestDelay The base delay from user settings (in milliseconds).
+ * @param retries Number of retries for failed requests (default: 3).
+ * @param retryDelay Initial delay for retries in milliseconds, which will increase exponentially (default: 1000).
+ * @returns A promise that resolves with the fetched data or null if the request fails after all retries.
  */
 async function executeRequest<T>(
     url: string,
@@ -115,7 +153,7 @@ async function executeRequest<T>(
             }
 
             if (i === retries - 1) {
-                logger.log('API request failed after all retries.', { url, error: error.message });
+                handleError(error, `API request failed after all retries for ${url}`, { silent: true });
                 return null;
             }
 
@@ -130,9 +168,20 @@ async function executeRequest<T>(
 
 /**
  * Fetches data from the GeoGuessr API by adding it to the request queue.
- * @param url The URL to fetch.
- * @param apiRequestDelay The base delay from user settings.
- * @returns A promise that resolves with the fetched data or null.
+ * This is the main API function that should be used throughout the application.
+ * It handles queuing, rate limiting, retries, and error handling automatically.
+ * 
+ * @template T The expected return type of the API response
+ * @param url The URL to fetch from the GeoGuessr API.
+ * @param apiRequestDelay The base delay between requests from user settings (in milliseconds).
+ * @returns A promise that resolves with the fetched data or null if the request fails.
+ * 
+ * @example
+ * // Example usage:
+ * const duelData = await fetchApi<DuelResponse>(`https://game-server.geoguessr.com/api/duels/${gameId}`, 250);
+ * if (duelData) {
+ *   // Process the data
+ * }
  */
 export function fetchApi<T>(url: string, apiRequestDelay: number): Promise<T | null> {
     return enqueueRequest(() => executeRequest<T>(url, apiRequestDelay));
@@ -174,8 +223,8 @@ function extractDuelGamesFromFeed(entries: any[]): any[] {
                     games.push({ time: entry.time, payload });
                 }
             }
-        } catch (e) {
-            logger.log('Failed to parse feed entry payload.', { entry, error: e });
+        } catch (error) {
+            handleError(error, 'Failed to parse feed entry payload', { silent: true });
         }
     }
 
@@ -464,29 +513,49 @@ export async function processFeedPages(
  * @param setSyncState A callback to update the UI's sync status.
  * @returns A promise that resolves to true if new data was added.
  */
-export async function checkForUpdates(
+/**
+ * Common function to sync rating history, used by both backfillHistory and checkForUpdates.
+ * @param userId The user's ID.
+ * @param apiRequestDelay The base delay for API requests.
+ * @param setSyncState A callback to update the UI's sync status.
+ * @param settings The user's current settings.
+ * @param callback The callback to call after sync operations.
+ * @param options Additional options to customize the sync behavior.
+ * @returns A promise that resolves to an object with the results of the sync operation.
+ */
+export async function syncRatingHistory(
     userId: string,
     apiRequestDelay: number,
     setSyncState: (syncing: boolean, text?: string, settings?: any, callback?: () => Promise<void>) => void,
     settings: any,
-    callback: () => Promise<void>
-): Promise<boolean> {
-    logger.log(`Checking for updates`);
+    callback: () => Promise<void>,
+    options: {
+        isBackfill?: boolean;
+        initialStatusMessage?: string;
+        logPrefix?: string;
+    } = {}
+): Promise<{ newDataAdded: boolean; reachedEnd: boolean; pagesProcessed: number }> {
+    const { isBackfill = false, initialStatusMessage, logPrefix = 'Sync' } = options;
+    
+    logger.log(`${logPrefix}: Starting operation`);
 
     // Get initial data to show in status
     const initialData = await getStoredData();
-    const oldestGame = initialData.overall[0];
-    const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
-    setSyncState(true, `Syncing data... (${initialData.overall.length} games)`, settings, callback);
+    setSyncState(
+        true, 
+        initialStatusMessage || `Syncing data... (${initialData.overall.length} games)`, 
+        settings, 
+        callback
+    );
 
     try {
         const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null, ended: false });
         
-        // Calculate cutoff date if not doing a full history sync (same as in backfillHistory)
+        // Calculate cutoff date if not doing a full history sync
         const cutoffDate = !settings.backfillFullHistory ? new Date() : undefined;
         if (cutoffDate) {
             cutoffDate.setDate(cutoffDate.getDate() - settings.backfillDays);
-            logger.log('Using cutoff date for updates check', { 
+            logger.log(`${logPrefix}: Using cutoff date`, { 
                 cutoffDate: cutoffDate.toISOString(),
                 backfillDays: settings.backfillDays
             });
@@ -494,7 +563,7 @@ export async function checkForUpdates(
         
         // Process feed pages
         const result = await processFeedPages(userId, apiRequestDelay, {
-            cutoffDate, // Pass the cutoff date to processFeedPages
+            cutoffDate,
             onGameProcessed: async () => {
                 // Render graph and update status after each game
                 const data = await getStoredData();
@@ -510,7 +579,7 @@ export async function checkForUpdates(
                     callback
                 );
             },
-            onPageProcessed: async (data) => {
+            onPageProcessed: async (_data) => {
                 // This is called after each page, but we already update after each game
                 // so we don't need to do anything here
             },
@@ -520,12 +589,12 @@ export async function checkForUpdates(
             }
         });
 
-        const { newDataAdded, reachedEnd } = result;
+        const { newDataAdded, reachedEnd, pagesProcessed } = result;
         
-        logger.log('Update check completed', { 
+        logger.log(`${logPrefix}: Operation completed`, { 
             newDataAdded, 
             reachedEnd, 
-            pagesProcessed: result.pagesProcessed,
+            pagesProcessed,
             backfillStateEnded: backfillState.ended
         });
 
@@ -533,22 +602,60 @@ export async function checkForUpdates(
         const finalData = await getStoredData();
         const oldestGame = finalData.overall[0];
         const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
-        const statusText = newDataAdded 
-            ? `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)` 
-            : `✓ Up to date (${finalData.overall.length} games)`;
+        
+        // Different status message based on operation type and result
+        let statusText;
+        if (isBackfill) {
+            statusText = `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)`;
+        } else {
+            statusText = newDataAdded 
+                ? `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)` 
+                : `✓ Up to date (${finalData.overall.length} games)`;
+        }
         setSyncState(false, statusText, settings, callback);
 
-        // Update backfill state - always set ended to true if we reached the end of the feed
+        // Update backfill state
         await GM_setValue(BACKFILL_STATE_KEY, {
-            ...backfillState,
+            lastLimitDays: settings.backfillFullHistory ? 9999 : settings.backfillDays,
             lastSyncTimestamp: Date.now(),
-            ended: reachedEnd ? true : backfillState.ended,
+            ended: isBackfill ? reachedEnd : (reachedEnd ? true : backfillState.ended),
         });
 
-        return newDataAdded;
-    } catch (e) {
-        logger.log('Background refresh failed.', { error: e });
-        setSyncState(false, 'Error', settings, callback);
-        return false;
+        // Render final graph
+        await renderGraph(finalData, settings);
+
+        return result;
+    } catch (error) {
+        handleError(error, `${logPrefix}: Operation failed`, {
+            setSyncState,
+            settings,
+            callback
+        });
+        return { newDataAdded: false, reachedEnd: false, pagesProcessed: 0 };
     }
+}
+
+/**
+ * Checks for new games since the last sync.
+ * Fetches pages from the feed until it finds a game that is already in the database.
+ * When history end was reached, it only searches until the first existing timestamp.
+ * If end was not reached yet, it continues until end of feed or date limit.
+ * @param userId The user's ID.
+ * @param apiRequestDelay The base delay for API requests.
+ * @param setSyncState A callback to update the UI's sync status.
+ * @returns A promise that resolves to true if new data was added.
+ */
+export async function checkForUpdates(
+    userId: string,
+    apiRequestDelay: number,
+    setSyncState: (syncing: boolean, text?: string, settings?: any, callback?: () => Promise<void>) => void,
+    settings: any,
+    callback: () => Promise<void>
+): Promise<boolean> {
+    const result = await syncRatingHistory(userId, apiRequestDelay, setSyncState, settings, callback, {
+        isBackfill: false,
+        logPrefix: 'Update check'
+    });
+    
+    return result.newDataAdded;
 }

@@ -1,8 +1,8 @@
-import { checkForUpdates, processFeedPages } from './lib/api';
+import { checkForUpdates, syncRatingHistory } from './lib/api';
 import { BACKFILL_STATE_KEY, DEFAULT_SETTINGS, RATING_HISTORY_KEY, SETTINGS_KEY } from './lib/constants';
 import { renderGraph, renderSettingsPanel, setSyncState, setupUI, startRefreshCycle } from './lib/ui';
-import { getStoredData, getUserId, loadSettings, logger, sleep, waitForReady } from './lib/utils';
-import { BackfillState, FeedResponse, Settings } from './types';
+import { getStoredData, getUserId, loadSettings, logger, waitForReady } from './lib/utils';
+import { BackfillState, Settings } from './types';
 
 /**
  * Guesslytics - GeoGuessr Rating Tracker
@@ -31,96 +31,16 @@ import { BackfillState, FeedResponse, Settings } from './types';
             return;
         }
 
-        const backfillState = (await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null, ended: false })) as BackfillState;
         isSyncing = true;
         
-        // Get initial data to show in status
-        const initialData = await getStoredData();
-        const oldestGame = initialData.overall[0];
-        const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
-        setSyncState(true, `Syncing data... (${initialData.overall.length} games)`, settings, checkForUpdatesCallback);
-
-        logger.log(`Starting history backfill.`);
-
-        let reachedEnd = false;
-        let pagesProcessed = 0;
-
-        // Calculate cutoff date if not doing a full history sync
-        const cutoffDate = !settings.backfillFullHistory ? new Date() : undefined;
-        if (cutoffDate) {
-            cutoffDate.setDate(cutoffDate.getDate() - settings.backfillDays);
-        }
-
         try {
-            logger.log('Starting history backfill process', {
-                backfillFullHistory: settings.backfillFullHistory,
-                backfillDays: settings.backfillDays,
-                cutoffDate: cutoffDate ? cutoffDate.toISOString() : 'none',
-                backfillStateEnded: backfillState.ended
+            await syncRatingHistory(userId, settings.apiRequestDelay, setSyncState, settings, checkForUpdatesCallback, {
+                isBackfill: true,
+                initialStatusMessage: 'Starting history backfill...',
+                logPrefix: 'History backfill'
             });
-
-            // Process feed pages
-            const result = await processFeedPages(userId, settings.apiRequestDelay, {
-                cutoffDate,
-                onGameProcessed: async () => {
-                    // Render graph and update status after each game
-                    const data = await getStoredData();
-                    await renderGraph(data, settings);
-                    
-                    // Update status with current progress
-                    const oldestGame = data.overall[0];
-                    const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
-                    setSyncState(
-                        true, 
-                        `Synced until ${oldestDateStr} (${data.overall.length} games)`, 
-                        settings, 
-                        checkForUpdatesCallback
-                    );
-                },
-                onPageProcessed: async (data) => {
-                    // This is called after each page, but we already update after each game
-                    // so we don't need to do anything here
-                },
-                statusUpdateCallback: (text) => {
-                    // Only used for initial status or errors
-                    setSyncState(true, text, settings, checkForUpdatesCallback);
-                }
-            });
-
-            reachedEnd = result.reachedEnd;
-            pagesProcessed = result.pagesProcessed;
-            
-            logger.log('History backfill completed', {
-                newDataAdded: result.newDataAdded,
-                reachedEnd,
-                pagesProcessed,
-                gamesCount: (await getStoredData()).overall.length
-            });
-        } catch (e) {
-            logger.log('Failed during history backfill process.', { error: e });
-            setSyncState(false, 'Error during sync', settings, checkForUpdatesCallback);
         } finally {
-            logger.log(`Updating backfill state`, { 
-                lastLimitDays: settings.backfillFullHistory ? 9999 : settings.backfillDays,
-                ended: reachedEnd,
-                previousEnded: backfillState.ended
-            });
-            
-            // Save the state of this backfill to avoid re-doing it unnecessarily.
-            await GM_setValue(BACKFILL_STATE_KEY, {
-                lastLimitDays: settings.backfillFullHistory ? 9999 : settings.backfillDays,
-                lastSyncTimestamp: Date.now(),
-                ended: reachedEnd,
-            });
             isSyncing = false;
-            
-            // Set final status message with the same format as during sync
-            const finalData = await getStoredData();
-            const oldestGame = finalData.overall[0];
-            const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
-            setSyncState(false, `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)`, settings, checkForUpdatesCallback);
-            
-            await renderGraph(finalData, settings);
         }
     }
 
