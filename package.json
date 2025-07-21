@@ -34,6 +34,7 @@
     },
     "packageManager": "yarn@4.9.2",
     "tampermonkey": {
+        "name": "Guesslytics - GeoGuessr Rating Tracker",
         "author": "Constructor",
         "outputFile": "guesslytics.user.js",
         "updateURL": "https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js",

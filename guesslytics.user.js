@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         guesslytics
+// @name         Guesslytics - GeoGuessr Rating Tracker
 // @namespace    https://github.com/Avanatiker/Guesslytics
 // @version      0.1.1
 // @description  Tracks your GeoGuessr competitive duel ratings over time and displays it in a graph
