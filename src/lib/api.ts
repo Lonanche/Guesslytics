@@ -1,5 +1,7 @@
 import { DuelResponse, FeedResponse, RatingHistory } from '../types';
-import { getModeKey, getStoredData, setStoredData, sleep } from './utils';
+import { getModeKey, getStoredData, logger, setStoredData, sleep } from './utils';
+import { BACKFILL_STATE_KEY } from './constants';
+import { renderGraph } from './ui';
 
 // --- Request Queue & Rate Limiting State ---
 
@@ -31,7 +33,7 @@ async function processRequestQueue() {
         try {
             await nextRequest();
         } catch (error) {
-            console.error('Guesslytics: Request from queue failed', error);
+            logger.log('Request from queue failed', { error });
         }
     }
 
@@ -73,6 +75,7 @@ async function executeRequest<T>(
     retries: number = 3,
     retryDelay: number = 1000
 ): Promise<T | null> {
+    logger.log(`Executing request`, { url, baseApiRequestDelay, retries, retryDelay });
     // Apply the base delay + any rate-limiting delay before the request
     await sleep(baseApiRequestDelay + rateLimitDelay);
 
@@ -85,6 +88,7 @@ async function executeRequest<T>(
                     responseType: 'json',
                     timeout: 20000,
                     onload: (res) => {
+                        logger.log(`Request onload`, { url, status: res.status });
                         if (res.status >= 200 && res.status < 300) {
                             resolve(res.response as T);
                         } else if (res.status === 429) {
@@ -105,18 +109,18 @@ async function executeRequest<T>(
             if (isRateLimit) {
                 // If we're rate-limited, significantly increase the delay
                 rateLimitDelay = Math.min(RATE_LIMIT_MAX_DELAY, (rateLimitDelay || 2000) * 2);
-                console.warn(`Guesslytics: Rate limited. Increasing delay to ${rateLimitDelay}ms.`);
+                logger.log(`Rate limited. Increasing delay to ${rateLimitDelay}ms.`);
                 const statusEl = document.getElementById('guesslyticsStatus');
                 if (statusEl) statusEl.innerHTML = `Rate limited, retrying...`;
             }
 
             if (i === retries - 1) {
-                console.error('Guesslytics: API request failed after all retries.', { url, error: error.message });
+                logger.log('API request failed after all retries.', { url, error: error.message });
                 return null;
             }
 
             const currentRetryDelay = (isRateLimit ? Math.max(retryDelay, 3000) : retryDelay) + rateLimitDelay;
-            console.warn(`Guesslytics: API request failed. Retrying in ${currentRetryDelay / 1000}s...`, error.message);
+            logger.log(`API request failed. Retrying in ${currentRetryDelay / 1000}s...`, { error: error.message });
             await sleep(currentRetryDelay);
             retryDelay *= 2; // Exponential backoff for next retry
         }
@@ -149,6 +153,7 @@ export function fetchApi<T>(url: string, apiRequestDelay: number): Promise<T | n
  */
 function extractDuelGamesFromFeed(entries: any[]): any[] {
     let games: any[] = [];
+    logger.log('Extracting duel games from feed', { entries });
 
     for (const entry of entries) {
         try {
@@ -170,10 +175,11 @@ function extractDuelGamesFromFeed(entries: any[]): any[] {
                 }
             }
         } catch (e) {
-            console.warn('Guesslytics: Failed to parse feed entry payload.', { entry, error: e });
+            logger.log('Failed to parse feed entry payload.', { entry, error: e });
         }
     }
 
+    logger.log('Finished extracting duel games', { games });
     return games;
 }
 
@@ -182,39 +188,53 @@ function extractDuelGamesFromFeed(entries: any[]): any[] {
  * @param rawEntries The raw feed entries from the API.
  * @param userId The current user's ID.
  * @param apiRequestDelay The base delay for API requests.
+ * @param onGameProcessed Optional callback that's called when a new game is processed.
  * @returns A promise that resolves to true if new data was added.
  */
 export async function processGames(
     rawEntries: any[],
     userId: string,
-    apiRequestDelay: number
-): Promise<boolean> {
+    apiRequestDelay: number,
+    onGameProcessed?: () => Promise<void>,
+    existingGameIds?: Set<string>
+): Promise<{ newDataAdded: boolean; foundExistingGame: boolean }> {
+    logger.log('Processing games from feed entries', { rawEntries });
     const storedData = await getStoredData();
-    const existingGameIds = new Set(storedData.overall.map((g) => g.gameId));
+    
+    // Use provided existingGameIds if available, otherwise create a new set
+    const gameIds = existingGameIds || new Set(storedData.overall.map((g) => g.gameId));
     let newDataAdded = false;
+    let foundExistingGame = false;
 
     const duelGames = extractDuelGamesFromFeed(rawEntries);
 
-    // Sort games by time (oldest first) to process in chronological order
-    duelGames.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    // Sort games by time (newest first) to process in reverse chronological order
+    duelGames.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
     for (const game of duelGames) {
         const gameId = game.payload.gameId;
-        if (existingGameIds.has(gameId)) {
-            continue; // Skip games we already have
+        if (gameIds.has(gameId)) {
+            logger.log(`Found existing game in database`, { gameId });
+            foundExistingGame = true;
+            continue;
         }
 
+        logger.log(`Fetching duel data for game`, { gameId });
         const duel = await fetchApi<DuelResponse>(
             `https://game-server.geoguessr.com/api/duels/${gameId}`,
             apiRequestDelay
         );
 
-        if (!duel) continue;
+        if (!duel) {
+            logger.log(`No duel data found for game`, { gameId });
+            continue;
+        }
 
         const player = duel.teams.flatMap((t) => t.players).find((p) => p.playerId === userId);
         const progress = player?.progressChange?.rankedSystemProgress;
 
         if (progress) {
+            logger.log(`Found progress for game`, { gameId, progress });
             const modeKey = getModeKey(progress.gameMode);
             const newEntry = { timestamp: game.time, gameId };
 
@@ -225,64 +245,310 @@ export async function processGames(
                 storedData[modeKey].push({ ...newEntry, rating: progress.gameModeRatingAfter });
             }
             newDataAdded = true;
-            existingGameIds.add(gameId);
+            gameIds.add(gameId);
+            
+            // Sort and save after each game is processed
+            for (const key in storedData) {
+                storedData[key as keyof RatingHistory].sort(
+                    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+                );
+            }
+            await setStoredData(storedData);
+            
+            // Call the callback if provided
+            if (onGameProcessed) {
+                await onGameProcessed();
+            }
         }
     }
 
-    if (newDataAdded) {
-        // Sort all datasets by timestamp to ensure chronological order
-        for (const key in storedData) {
-            storedData[key as keyof RatingHistory].sort(
-                (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-            );
-        }
-        await setStoredData(storedData);
+    return { newDataAdded, foundExistingGame };
+}
+
+/**
+ * Processes feed pages to find and process games.
+ * This is a common helper function used by both backfillHistory and checkForUpdates.
+ * @param userId The user's ID.
+ * @param apiRequestDelay The base delay for API requests.
+ * @param options Additional options for processing.
+ * @returns A promise that resolves to an object with the results of the processing.
+ */
+export async function processFeedPages(
+    userId: string,
+    apiRequestDelay: number,
+    options: {
+        initialUrl?: string;
+        maxPages?: number;
+        cutoffDate?: Date;
+        onGameProcessed?: () => Promise<void>;
+        onPageProcessed?: (data: any) => Promise<void>;
+        statusUpdateCallback?: (text: string) => void;
+    }
+): Promise<{ newDataAdded: boolean; reachedEnd: boolean; pagesProcessed: number }> {
+    // Extract options with defaults
+    const {
+        initialUrl = 'https://www.geoguessr.com/api/v4/feed/private',
+        maxPages = 500,
+        cutoffDate,
+        onGameProcessed,
+        onPageProcessed,
+        statusUpdateCallback
+    } = options;
+
+    // Initialize state variables
+    let paginationToken: string | undefined;
+    let newDataAdded = false;
+    let pagesProcessed = 0;
+    let reachedEnd = false;
+    let foundExistingGame = false;
+    
+    // Get existing game IDs from stored data
+    const storedData = await getStoredData();
+    const existingGameIds = new Set(storedData.overall.map((g) => g.gameId));
+    
+    // Get backfill state
+    const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null, ended: false });
+    
+    logger.log('Starting feed processing', { 
+        backfillStateEnded: backfillState.ended,
+        existingGamesCount: existingGameIds.size,
+        hasCutoffDate: !!cutoffDate,
+        cutoffDate: cutoffDate ? cutoffDate.toISOString() : 'none'
+    });
+
+    // --- Process first page ---
+    const initialFeed = await fetchApi<FeedResponse>(initialUrl, apiRequestDelay);
+    if (!initialFeed) {
+        logger.log('Failed to fetch initial feed page.');
+        return { newDataAdded, reachedEnd, pagesProcessed };
     }
 
-    return newDataAdded;
+    // Process games from first page
+    const firstPageResult = await processGames(initialFeed.entries, userId, apiRequestDelay, onGameProcessed, existingGameIds);
+    newDataAdded = firstPageResult.newDataAdded;
+    foundExistingGame = firstPageResult.foundExistingGame;
+    
+    // Call page processed callback if provided
+    if (onPageProcessed) {
+        await onPageProcessed(await getStoredData());
+    }
+
+    // Check if we reached the end of the feed
+    paginationToken = initialFeed.paginationToken;
+    if (!paginationToken) {
+        logger.log('Reached the end of the feed on the first page.');
+        reachedEnd = true;
+        return { newDataAdded, reachedEnd, pagesProcessed };
+    }
+
+    // Check if we should stop after the first page
+    if (foundExistingGame && backfillState.ended) {
+        logger.log('Found existing game on first page and history end was reached. Stopping feed processing.');
+        return { newDataAdded, reachedEnd: true, pagesProcessed };
+    }
+
+    // Check if we've passed the cutoff date already
+    if (cutoffDate) {
+        const currentData = await getStoredData();
+        const oldestGame = currentData.overall[0];
+        if (oldestGame && new Date(oldestGame.timestamp) < cutoffDate) {
+            logger.log(`Reached cutoff date after first page. Stopping feed processing.`, { 
+                cutoffDate: cutoffDate.toISOString(),
+                oldestGameDate: oldestGame ? new Date(oldestGame.timestamp).toISOString() : 'N/A'
+            });
+            return { newDataAdded, reachedEnd: false, pagesProcessed };
+        }
+    }
+
+    // --- Process subsequent pages ---
+    while (paginationToken && pagesProcessed < maxPages) {
+        // Stop if we found an existing game and history end was reached
+        if (foundExistingGame && backfillState.ended) {
+            logger.log('Found existing game and history end was reached. Stopping feed processing.');
+            break;
+        }
+        
+        pagesProcessed++;
+        logger.log(`Processing feed page ${pagesProcessed}`);
+
+        // Update status if callback provided
+        if (statusUpdateCallback) {
+            const currentData = await getStoredData();
+            const oldestGame = currentData.overall[0];
+            const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
+            statusUpdateCallback(`Synced until ${oldestDateStr} (${currentData.overall.length} games)`);
+        }
+
+        // Fetch next page
+        const feedData = await fetchApi<FeedResponse>(
+            `https://www.geoguessr.com/api/v4/feed/private?paginationToken=${paginationToken}`,
+            apiRequestDelay
+        );
+
+        if (!feedData) {
+            logger.log(`No feed data on page ${pagesProcessed}, stopping.`);
+            break;
+        }
+
+        // Process games from this page
+        const pageResult = await processGames(feedData.entries, userId, apiRequestDelay, onGameProcessed, existingGameIds);
+        if (pageResult.newDataAdded) {
+            newDataAdded = true;
+        }
+        
+        if (pageResult.foundExistingGame) {
+            foundExistingGame = true;
+            logger.log('Found existing game on page', { 
+                page: pagesProcessed, 
+                backfillStateEnded: backfillState.ended
+            });
+            
+            // If history end was reached, stop processing
+            if (backfillState.ended) {
+                logger.log('Found existing game and history end was reached. Stopping feed processing.');
+                break;
+            }
+        }
+
+        // Call page processed callback if provided
+        if (onPageProcessed) {
+            await onPageProcessed(await getStoredData());
+        }
+
+        // Check if we've passed the cutoff date
+        if (cutoffDate) {
+            const currentData = await getStoredData();
+            const oldestGame = currentData.overall[0];
+            if (oldestGame && new Date(oldestGame.timestamp) < cutoffDate) {
+                logger.log(`Reached cutoff date. Stopping feed processing.`, { 
+                    cutoffDate: cutoffDate.toISOString(),
+                    oldestGameDate: oldestGame ? new Date(oldestGame.timestamp).toISOString() : 'N/A'
+                });
+                // We're stopping due to cutoff date, not because we reached the end
+                reachedEnd = false;
+                break;
+            }
+        }
+
+        // Check if we've reached the end of the feed
+        paginationToken = feedData.paginationToken;
+        if (!paginationToken) {
+            logger.log('Reached the end of the feed.');
+            reachedEnd = true;
+            break;
+        }
+
+        await sleep(apiRequestDelay);
+    }
+
+    // Log completion
+    logger.log('Completed feed processing', { 
+        pagesProcessed, 
+        newDataAdded, 
+        reachedEnd, 
+        foundExistingGame,
+        backfillStateEnded: backfillState.ended,
+        stoppedDueToCutoff: cutoffDate ? 'possibly' : 'no'
+    });
+    
+    return { newDataAdded, reachedEnd, pagesProcessed };
 }
 
 /**
  * Checks for new games since the last sync.
- * Fetches the first page of the feed and processes any new games.
+ * Fetches pages from the feed until it finds a game that is already in the database.
+ * When history end was reached, it only searches until the first existing timestamp.
+ * If end was not reached yet, it continues until end of feed or date limit.
  * @param userId The user's ID.
- * @param isManual Whether the sync was triggered manually.
  * @param apiRequestDelay The base delay for API requests.
  * @param setSyncState A callback to update the UI's sync status.
  * @returns A promise that resolves to true if new data was added.
  */
 export async function checkForUpdates(
     userId: string,
-    isManual: boolean,
     apiRequestDelay: number,
-    setSyncState: (syncing: boolean, text?: string) => void
+    setSyncState: (syncing: boolean, text?: string, settings?: any, callback?: () => Promise<void>) => void,
+    settings: any,
+    callback: () => Promise<void>
 ): Promise<boolean> {
-    console.log(`Guesslytics: Checking for updates (Manual: ${isManual})`);
-    setSyncState(true, isManual ? 'Syncing...' : '');
+    logger.log(`Checking for updates`);
+
+    // Get initial data to show in status
+    const initialData = await getStoredData();
+    const oldestGame = initialData.overall[0];
+    const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
+    setSyncState(true, `Syncing data... (${initialData.overall.length} games)`, settings, callback);
 
     try {
-        const feedData = await fetchApi<FeedResponse>(
-            'https://www.geoguessr.com/api/v4/feed/private',
-            apiRequestDelay
-        );
-
-        if (!feedData) {
-            setSyncState(false, 'Error');
-            return false;
+        const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null, ended: false });
+        
+        // Calculate cutoff date if not doing a full history sync (same as in backfillHistory)
+        const cutoffDate = !settings.backfillFullHistory ? new Date() : undefined;
+        if (cutoffDate) {
+            cutoffDate.setDate(cutoffDate.getDate() - settings.backfillDays);
+            logger.log('Using cutoff date for updates check', { 
+                cutoffDate: cutoffDate.toISOString(),
+                backfillDays: settings.backfillDays
+            });
         }
+        
+        // Process feed pages
+        const result = await processFeedPages(userId, apiRequestDelay, {
+            cutoffDate, // Pass the cutoff date to processFeedPages
+            onGameProcessed: async () => {
+                // Render graph and update status after each game
+                const data = await getStoredData();
+                await renderGraph(data, settings);
+                
+                // Update status with current progress
+                const oldestGame = data.overall[0];
+                const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
+                setSyncState(
+                    true, 
+                    `Synced until ${oldestDateStr} (${data.overall.length} games)`, 
+                    settings, 
+                    callback
+                );
+            },
+            onPageProcessed: async (data) => {
+                // This is called after each page, but we already update after each game
+                // so we don't need to do anything here
+            },
+            statusUpdateCallback: (text) => {
+                // Only used for initial status or errors
+                setSyncState(true, text, settings, callback);
+            }
+        });
 
-        const newDataAdded = await processGames(feedData.entries, userId, apiRequestDelay);
-        const statusText = newDataAdded ? '✓ Synced' : isManual ? '✓ Up to date' : '';
-        setSyncState(false, statusText);
+        const { newDataAdded, reachedEnd } = result;
+        
+        logger.log('Update check completed', { 
+            newDataAdded, 
+            reachedEnd, 
+            pagesProcessed: result.pagesProcessed,
+            backfillStateEnded: backfillState.ended
+        });
 
-        // Update last sync timestamp
-        const backfillState = await GM_getValue('guesslyticsBackfillState', {});
-        await GM_setValue('guesslyticsBackfillState', { ...backfillState, lastSyncTimestamp: Date.now() });
+        // Set final status message with the same format as during sync
+        const finalData = await getStoredData();
+        const oldestGame = finalData.overall[0];
+        const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
+        const statusText = newDataAdded 
+            ? `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)` 
+            : `✓ Up to date (${finalData.overall.length} games)`;
+        setSyncState(false, statusText, settings, callback);
+
+        // Update backfill state - always set ended to true if we reached the end of the feed
+        await GM_setValue(BACKFILL_STATE_KEY, {
+            ...backfillState,
+            lastSyncTimestamp: Date.now(),
+            ended: reachedEnd ? true : backfillState.ended,
+        });
 
         return newDataAdded;
     } catch (e) {
-        console.error('Guesslytics: Background refresh failed.', e);
-        setSyncState(false, 'Error');
+        logger.log('Background refresh failed.', { error: e });
+        setSyncState(false, 'Error', settings, callback);
         return false;
     }
 }

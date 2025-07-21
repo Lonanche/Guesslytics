@@ -37,6 +37,7 @@ export interface Settings {
     autoRefreshInterval: number;
     apiRequestDelay: number;
     backgroundOpacity: number;
+    verboseLogging: boolean;
     initialZoomDays?: number;
 }
 
@@ -56,6 +57,7 @@ export interface RatingHistory {
 export interface BackfillState {
     lastLimitDays: number;
     lastSyncTimestamp: number | null;
+    ended?: boolean;
 }
 
 export interface DatasetStyle {

@@ -1,6 +1,6 @@
 import { ChartDataset, ChartOptions, RatingHistory, Settings } from '../types';
 import { BACKFILL_STATE_KEY, DATASET_STYLES, ICONS } from './constants';
-import { formatDate, getStoredData, getUserId } from './utils';
+import { formatDate, getStoredData, getUserId, logger } from './utils';
 
 // --- Module State ---
 let ratingChart: any = null; // The Chart.js instance.
@@ -16,7 +16,12 @@ let countdownIntervalId: number | null = null;
  * @param syncing Whether the script is currently syncing data.
  * @param text The text to display next to the sync indicator.
  */
-export function setSyncState(syncing: boolean, text: string = ''): void {
+export function setSyncState(
+    syncing: boolean,
+    text: string = '',
+    settings?: Settings,
+    callback?: () => Promise<void>
+): void {
     const statusEl = document.getElementById('guesslyticsStatus');
     const timerEl = document.getElementById('guesslyticsTimer');
     const resyncBtn = document.getElementById('guesslyticsResyncBtn') as HTMLButtonElement;
@@ -27,18 +32,19 @@ export function setSyncState(syncing: boolean, text: string = ''): void {
 
     if (syncing) {
         if (countdownIntervalId) clearInterval(countdownIntervalId);
+        countdownIntervalId = null;
         timerEl.style.display = 'none';
         statusEl.innerHTML = `${text || 'Syncing...'} <div class="gg-spinner"></div>`;
     } else {
         statusEl.innerText = text;
-        // Hide the timer while the status text is showing, then clear the text after a delay.
-        timerEl.style.display = 'none';
         setTimeout(() => {
             if (statusEl && statusEl.innerText === text) {
                 statusEl.innerText = '';
             }
-            // The refresh cycle will handle showing the timer again.
         }, 3000);
+        if (settings && callback) {
+            startRefreshCycle(settings, callback);
+        }
     }
 }
 
@@ -54,7 +60,7 @@ export function setupUI(
     settings: Settings,
     resyncCallback: () => Promise<void>
 ): void {
-    // Set the default font for all charts.
+    logger.log('Setting up UI.');
     Chart.defaults.font.family = "'ggFont', sans-serif";
 
     const targetElement = document.querySelector('[class*="division-header_right"]');
@@ -115,7 +121,6 @@ export function setupUI(
         #guesslyticsCanvas { flex-grow: 1; min-height: 0; }
         .chart-buttons { display: flex; gap: 5px; } .chart-buttons button { background: #333; border: 1px solid #555; border-radius: 5px; cursor: pointer; color: white; width: 24px; height: 24px; padding: 3px; }
         .chart-buttons button:hover { background: #444; } .chart-buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
-        /* Settings Modal */
         #guesslyticsSettingsPanel { display: none; }
         #guesslyticsSettingsOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; }
         #guesslyticsSettingsModal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; background: #1c1c1c; color: #fff; padding: 25px; border-radius: 8px; z-index: 10001; border: 1px solid #444; }
@@ -159,7 +164,7 @@ export async function calculateAndRenderStats(): Promise<void> {
     });
 
     if (visibleData.length < 2) {
-        statsEl.innerHTML = '<div class="stat-item"><div class="label">Not enough data in this view for stats</div></div>';
+        statsEl.innerHTML = '<div class="stat-item"><div class="label">Not enough data for stats</div></div>';
         return;
     }
 
@@ -205,17 +210,18 @@ export async function calculateAndRenderStats(): Promise<void> {
  * @param settings The user's current settings.
  */
 export async function renderSettingsPanel(settings: Settings): Promise<void> {
+    logger.log('Rendering settings panel.');
     const settingsPanel = document.getElementById('guesslyticsSettingsPanel');
     if (!settingsPanel) return;
 
     const data = await getStoredData();
-    const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null });
+    const backfillState = await GM_getValue(BACKFILL_STATE_KEY, { lastLimitDays: 0, lastSyncTimestamp: null, ended: false });
 
     const stats = {
         points: data.overall.length,
         oldest: data.overall.length > 0 ? formatDate(data.overall[0].timestamp) : 'N/A',
         newest: data.overall.length > 0 ? formatDate(data.overall[data.overall.length - 1].timestamp) : 'N/A',
-        lastSync: formatDate(backfillState.lastSyncTimestamp),
+        lastSync: formatDate(backfillState?.lastSyncTimestamp ?? null),
     };
 
     settingsPanel.innerHTML = `
@@ -244,7 +250,9 @@ export async function renderSettingsPanel(settings: Settings): Promise<void> {
                 <div class="settings-row"><label for="apiRequestDelay">API Request Delay (ms)</label>
                 <input type="number" id="apiRequestDelay" value="${settings.apiRequestDelay}" min="50"></div>
                 <div class="settings-row"><label for="bgOpacity">Background Opacity (%)</label>
-                <input type="range" id="bgOpacity" value="${settings.backgroundOpacity}" min="0" max="100"></div></div>
+                <input type="range" id="bgOpacity" value="${settings.backgroundOpacity}" min="0" max="100"></div>
+                <div class="settings-row"><label for="verboseLogging">Enable Verbose Logging</label>
+                <input type="checkbox" id="verboseLogging" ${settings.verboseLogging ? 'checked' : ''}></div></div>
             <div class="settings-stats"><b>Games Tracked:</b> ${stats.points} | <b>Last Sync:</b> ${stats.lastSync}<br>
             <b>Date Range:</b> ${stats.oldest} – ${stats.newest}</div>
             <div class="settings-actions"><button id="resetSettingsBtn">Reset Settings</button>
@@ -488,14 +496,13 @@ export function startRefreshCycle(
     if (countdownIntervalId) clearInterval(countdownIntervalId);
 
     const userId = getUserId();
-    if (!userId || settings.autoRefreshInterval <= 0) {
-        const timerEl = document.getElementById('guesslyticsTimer');
-        if (timerEl) timerEl.style.display = 'none';
-        return;
-    }
-
     const timerEl = document.getElementById('guesslyticsTimer');
     if (!timerEl) return;
+
+    if (!userId || settings.autoRefreshInterval <= 0) {
+        timerEl.style.display = 'none';
+        return;
+    }
 
     timerEl.style.display = 'inline';
     let nextSyncTime = Date.now() + settings.autoRefreshInterval * 1000;

@@ -15,7 +15,8 @@ export const DEFAULT_SETTINGS: Settings = {
     autoRefreshInterval: 60,
     apiRequestDelay: 250,
     backgroundOpacity: 15,
-    initialZoomDays: 7
+    initialZoomDays: 7,
+    verboseLogging: false,
 };
 
 // Icons for UI
