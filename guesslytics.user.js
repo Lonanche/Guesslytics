@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         guesslytics
 // @namespace    https://github.com/Avanatiker/Guesslytics
-// @version      0.1.0
+// @version      0.1.1
 // @description  Tracks your GeoGuessr competitive duel ratings over time and displays it in a graph
 // @author       Constructor
 // @match        https://www.geoguessr.com/multiplayer
