@@ -343,19 +343,18 @@ function createChartOptions(
             legend: { display: false },
             tooltip: {
                 position: 'nearest',
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: 'rgba(255, 255, 255, 0.2)',
+                borderWidth: 1,
+                padding: 10,
+                displayColors: true,
                 callbacks: {
                     title: (items) => formatDate(items[0].parsed.x),
-                    label: () => null,
-                    afterBody: (tooltipItems) => {
-                        const processedDatasets = new Set();
-                        return tooltipItems.reduce((acc, item) => {
-                            if (!processedDatasets.has(item.dataset.label)) {
-                                processedDatasets.add(item.dataset.label);
-                                acc.push(`${item.dataset.label}: ${item.parsed.y}`);
-                            }
-                            return acc;
-                        }, [] as string[]);
-                    },
+                    label: (context) => {
+                        return `${context.dataset.label}: ${context.parsed.y}`;
+                    }
                 },
             },
         },

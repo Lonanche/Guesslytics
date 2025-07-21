@@ -113,6 +113,13 @@ export interface ChartOptions {
         };
         tooltip: {
             position: string;
+            backgroundColor?: string;
+            titleColor?: string;
+            bodyColor?: string;
+            borderColor?: string;
+            borderWidth?: number;
+            padding?: number;
+            displayColors?: boolean;
             callbacks: {
                 title: (items: any[]) => string;
                 beforeLabel?: (ctx: any) => boolean | void;

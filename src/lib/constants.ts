@@ -26,6 +26,7 @@ export const ICONS = {
     SETTINGS: `<i class="fa-solid fa-gear"></i>`,
     GITHUB: `<i class="fa-brands fa-github"></i>`,
     RESYNC: `<i class="fa-solid fa-sync-alt"></i>`,
+    CHART: `<i class="fa-solid fa-chart-line" style="color: white;"></i>`,
 };
 
 // Dataset styles for chart

@@ -1,5 +1,5 @@
 import { checkForUpdates, syncRatingHistory } from './lib/api';
-import { BACKFILL_STATE_KEY, DEFAULT_SETTINGS, RATING_HISTORY_KEY, SETTINGS_KEY } from './lib/constants';
+import { BACKFILL_STATE_KEY, DEFAULT_SETTINGS, ICONS, RATING_HISTORY_KEY, SETTINGS_KEY } from './lib/constants';
 import { renderGraph, renderSettingsPanel, setSyncState, setupUI, startRefreshCycle } from './lib/ui';
 import { getStoredData, getUserId, loadSettings, logger, waitForReady } from './lib/utils';
 import { BackfillState, Settings } from './types';
@@ -64,6 +64,90 @@ import { BackfillState, Settings } from './types';
     }
 
     // --- UI & Event Handlers ---
+
+    /**
+     * Adds a "Statistics" button to the victory screen that appears after a game.
+     * This button will restore the graph view and trigger a sync when clicked.
+     * 
+     * When a game is completed, GeoGuessr replaces the content of the division header's right side
+     * with a victory screen that includes "Breakdown" and "Replay" buttons. This function adds a
+     * third "Statistics" button in the same style that, when clicked, restores our graph view and
+     * triggers a sync to get the latest data.
+     */
+    function addGraphButtonToVictoryScreen(): void {
+        // Check if we're on the multiplayer page
+        if (window.location.pathname !== '/multiplayer') return;
+
+        // Check if the victory screen is present
+        const statusBox = document.querySelector('.status-box_actions__E_Ryq') as HTMLElement;
+        if (!statusBox) return;
+
+        // Check if our button already exists
+        if (document.getElementById('guesslyticsGraphBtn')) return;
+        
+        // Modify the parent container to ensure all buttons are in a single row
+        statusBox.style.display = 'flex';
+        statusBox.style.flexDirection = 'row';
+        statusBox.style.flexWrap = 'nowrap';
+        statusBox.style.justifyContent = 'center';
+        statusBox.style.gap = '10px';
+
+        // Create a new button container similar to the existing ones
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'flex_flex__Rxtgm flex_direction__Fa3Gs flex_gap__sXfgm flex_justify__2rGZO flex_align__PRoee';
+        buttonContainer.style.cssText = '--direction: column; --gap: 6; --justify: flex-start; --align: center;';
+
+        // Create the button wrapper
+        const buttonWrapper = document.createElement('div');
+        buttonWrapper.className = 'status-box_actionButtonWrapper__4S6eN';
+
+        // Create the button
+        const button = document.createElement('button');
+        button.id = 'guesslyticsGraphBtn';
+        button.className = 'status-box_actionButton__MbK3e';
+        button.innerHTML = ICONS.CHART;
+
+        // Create the button text
+        const buttonText = document.createElement('span');
+        buttonText.className = 'status-box_buttonText__3IW4K';
+        buttonText.textContent = 'Statistics';
+
+        // Add click handler to restore graph view and trigger sync
+        button.onclick = async () => {
+            logger.log('Statistics button clicked, restoring graph view');
+            
+            // Get the division header right element
+            const targetElement = document.querySelector('[class*="division-header_right"]');
+            if (!targetElement) {
+                logger.error('Could not find target element for graph view');
+                return;
+            }
+
+            // Clear the victory screen
+            targetElement.innerHTML = '';
+
+            // Reinitialize the graph view
+            if (userId) {
+                setupUI(userId, settings, () => backfillHistory());
+                await renderGraph(await getStoredData(), settings);
+                
+                // Trigger a sync to get the latest data
+                await checkForUpdatesCallback();
+            } else {
+                logger.error('No user ID available for graph view');
+            }
+        };
+
+        // Assemble the button
+        buttonWrapper.appendChild(button);
+        buttonContainer.appendChild(buttonWrapper);
+        buttonContainer.appendChild(buttonText);
+
+        // Add the button to the status box
+        statusBox.appendChild(buttonContainer);
+        
+        logger.log('Added Statistics button to victory screen');
+    }
 
     /**
      * Sets up all event handlers for the settings panel.
@@ -219,6 +303,14 @@ import { BackfillState, Settings } from './types';
                     // If we navigate away, reset the initialized flag so the script can run again if we return.
                     isInitialized = false;
                 }
+                
+                // Check for victory screen and add our Graph button if needed
+                // This is called on every DOM mutation to ensure we catch the victory screen
+                // as soon as it appears, even if it's added dynamically after a game completes
+                if (isMultiplayerPage) {
+                    addGraphButtonToVictoryScreen();
+                }
+                
                 break; // No need to check all mutations.
             }
         }
