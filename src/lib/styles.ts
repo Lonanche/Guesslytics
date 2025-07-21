@@ -2,6 +2,8 @@
 
 // Define the CSS content as a regular string
 export const css = `
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
+
 #guesslyticsContainer { 
     display: flex; 
     flex-direction: column; 
@@ -109,7 +111,7 @@ export const css = `
     color: white; 
     width: 24px; 
     height: 24px; 
-    padding: 3px; 
+    padding: 0; 
 }
 
 .chart-buttons button:hover { 
@@ -267,10 +269,7 @@ export const css = `
     gap: 4px; 
 } 
 
-.settings-footer svg { 
-    width: 14px; 
-    height: 14px; 
-}
+
 
 /* Spinner Animation */
 .gg-spinner { 

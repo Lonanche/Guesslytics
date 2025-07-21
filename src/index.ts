@@ -36,7 +36,6 @@ import { BackfillState, Settings } from './types';
         try {
             await syncRatingHistory(userId, settings.apiRequestDelay, setSyncState, settings, checkForUpdatesCallback, {
                 isBackfill: true,
-                initialStatusMessage: 'Starting history backfill...',
                 logPrefix: 'History backfill'
             });
         } finally {

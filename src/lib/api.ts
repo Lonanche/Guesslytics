@@ -238,6 +238,7 @@ function extractDuelGamesFromFeed(entries: any[]): any[] {
  * @param userId The current user's ID.
  * @param apiRequestDelay The base delay for API requests.
  * @param onGameProcessed Optional callback that's called when a new game is processed.
+ * @param existingGameIds Game IDs that exist lol
  * @returns A promise that resolves to true if new data was added.
  */
 export async function processGames(
@@ -330,8 +331,6 @@ export async function processFeedPages(
         maxPages?: number;
         cutoffDate?: Date;
         onGameProcessed?: () => Promise<void>;
-        onPageProcessed?: (data: any) => Promise<void>;
-        statusUpdateCallback?: (text: string) => void;
     }
 ): Promise<{ newDataAdded: boolean; reachedEnd: boolean; pagesProcessed: number }> {
     // Extract options with defaults
@@ -339,9 +338,7 @@ export async function processFeedPages(
         initialUrl = 'https://www.geoguessr.com/api/v4/feed/private',
         maxPages = 500,
         cutoffDate,
-        onGameProcessed,
-        onPageProcessed,
-        statusUpdateCallback
+        onGameProcessed
     } = options;
 
     // Initialize state variables
@@ -376,11 +373,6 @@ export async function processFeedPages(
     const firstPageResult = await processGames(initialFeed.entries, userId, apiRequestDelay, onGameProcessed, existingGameIds);
     newDataAdded = firstPageResult.newDataAdded;
     foundExistingGame = firstPageResult.foundExistingGame;
-    
-    // Call page processed callback if provided
-    if (onPageProcessed) {
-        await onPageProcessed(await getStoredData());
-    }
 
     // Check if we reached the end of the feed
     paginationToken = initialFeed.paginationToken;
@@ -420,14 +412,6 @@ export async function processFeedPages(
         pagesProcessed++;
         logger.log(`Processing feed page ${pagesProcessed}`);
 
-        // Update status if callback provided
-        if (statusUpdateCallback) {
-            const currentData = await getStoredData();
-            const oldestGame = currentData.overall[0];
-            const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
-            statusUpdateCallback(`Synced until ${oldestDateStr} (${currentData.overall.length} games)`);
-        }
-
         // Fetch next page
         const feedData = await fetchApi<FeedResponse>(
             `https://www.geoguessr.com/api/v4/feed/private?paginationToken=${paginationToken}`,
@@ -457,11 +441,6 @@ export async function processFeedPages(
                 logger.log('Found existing game and history end was reached. Stopping feed processing.');
                 break;
             }
-        }
-
-        // Call page processed callback if provided
-        if (onPageProcessed) {
-            await onPageProcessed(await getStoredData());
         }
 
         // Check if we've passed the cutoff date
@@ -531,19 +510,16 @@ export async function syncRatingHistory(
     callback: () => Promise<void>,
     options: {
         isBackfill?: boolean;
-        initialStatusMessage?: string;
         logPrefix?: string;
     } = {}
 ): Promise<{ newDataAdded: boolean; reachedEnd: boolean; pagesProcessed: number }> {
-    const { isBackfill = false, initialStatusMessage, logPrefix = 'Sync' } = options;
-    
+    const { isBackfill = false, logPrefix = 'Sync' } = options;
+
     logger.log(`${logPrefix}: Starting operation`);
 
-    // Get initial data to show in status
-    const initialData = await getStoredData();
     setSyncState(
         true, 
-        initialStatusMessage || `Syncing data... (${initialData.overall.length} games)`, 
+        `Syncing...`,
         settings, 
         callback
     );
@@ -571,22 +547,13 @@ export async function syncRatingHistory(
                 
                 // Update status with current progress
                 const oldestGame = data.overall[0];
-                const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
                 setSyncState(
                     true, 
-                    `Synced until ${oldestDateStr} (${data.overall.length} games)`, 
+                    `Syncing (${new Date(oldestGame.timestamp).toLocaleDateString()})...`, 
                     settings, 
                     callback
                 );
             },
-            onPageProcessed: async (_data) => {
-                // This is called after each page, but we already update after each game
-                // so we don't need to do anything here
-            },
-            statusUpdateCallback: (text) => {
-                // Only used for initial status or errors
-                setSyncState(true, text, settings, callback);
-            }
         });
 
         const { newDataAdded, reachedEnd, pagesProcessed } = result;
@@ -600,19 +567,10 @@ export async function syncRatingHistory(
 
         // Set final status message with the same format as during sync
         const finalData = await getStoredData();
-        const oldestGame = finalData.overall[0];
-        const oldestDateStr = oldestGame ? new Date(oldestGame.timestamp).toLocaleDateString() : 'N/A';
+        
         
         // Different status message based on operation type and result
-        let statusText;
-        if (isBackfill) {
-            statusText = `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)`;
-        } else {
-            statusText = newDataAdded 
-                ? `✓ Synced until ${oldestDateStr} (${finalData.overall.length} games)` 
-                : `✓ Up to date (${finalData.overall.length} games)`;
-        }
-        setSyncState(false, statusText, settings, callback);
+        setSyncState(false, `✓ Up-to-date`, settings, callback);
 
         // Update backfill state
         await GM_setValue(BACKFILL_STATE_KEY, {
@@ -636,14 +594,14 @@ export async function syncRatingHistory(
 }
 
 /**
- * Checks for new games since the last sync.
- * Fetches pages from the feed until it finds a game that is already in the database.
- * When history end was reached, it only searches until the first existing timestamp.
- * If end was not reached yet, it continues until end of feed or date limit.
- * @param userId The user's ID.
- * @param apiRequestDelay The base delay for API requests.
- * @param setSyncState A callback to update the UI's sync status.
- * @returns A promise that resolves to true if new data was added.
+ * Checks for updates by synchronizing rating history for a specified user.
+ *
+ * @param {string} userId - The unique identifier of the user for whom updates are being checked.
+ * @param {number} apiRequestDelay - The delay (in milliseconds) between API requests.
+ * @param {function} setSyncState - A callback function to set the sync state, optionally providing text, settings, and an additional callback.
+ * @param {any} settings - Configuration settings used during the update process.
+ * @param {function} callback - A callback function to execute additional logic after the synchronization process.
+ * @return {Promise<boolean>} A promise that resolves to a boolean indicating whether new data was added during the update check.
  */
 export async function checkForUpdates(
     userId: string,

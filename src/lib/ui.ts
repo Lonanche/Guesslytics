@@ -35,11 +35,11 @@ export function setSyncState(
         if (countdownIntervalId) clearInterval(countdownIntervalId);
         countdownIntervalId = null;
         timerEl.style.display = 'none';
-        statusEl.innerHTML = `${text || 'Syncing...'} <div class="gg-spinner"></div>`;
+        statusEl.innerHTML = `${text} <div class="gg-spinner"></div>`;
     } else {
-        statusEl.innerText = text;
+        statusEl.innerText = `✓ Up-to-date`;
         setTimeout(() => {
-            if (statusEl && statusEl.innerText === text) {
+            if (statusEl && statusEl.innerText === `✓ Up-to-date`) {
                 statusEl.innerText = '';
             }
         }, 3000);
@@ -231,20 +231,23 @@ export async function renderSettingsPanel(settings: Settings): Promise<void> {
 
     document.getElementById('guesslyticsSettingsOverlay')!.onclick = () => (settingsPanel.style.display = 'none');
 
+    // Dispatch a custom event to signal that the settings panel has been rendered.
+    // This allows the main script to attach event handlers after the panel is in the DOM.
+    document.dispatchEvent(new CustomEvent('guesslyticsSettingsRendered'));
+
     // Toggle visibility of the backfill days input based on the full history checkbox.
     const backfillDaysRow = document.getElementById('backfillDaysRow');
     const fullHistoryCheck = document.getElementById('backfillFull') as HTMLInputElement;
 
     if (backfillDaysRow && fullHistoryCheck) {
-        backfillDaysRow.style.display = settings.backfillFullHistory ? 'none' : 'flex';
+        // Set initial visibility based on current settings
+        backfillDaysRow.classList.toggle('hidden', settings.backfillFullHistory);
+
+        // Add event listener to update visibility when the checkbox changes
         fullHistoryCheck.onchange = () => {
-            backfillDaysRow.style.display = fullHistoryCheck.checked ? 'none' : 'flex';
+            backfillDaysRow.classList.toggle('hidden', fullHistoryCheck.checked);
         };
     }
-
-    // Dispatch a custom event to signal that the settings panel has been rendered.
-    // This allows the main script to attach event handlers after the panel is in the DOM.
-    document.dispatchEvent(new CustomEvent('guesslyticsSettingsRendered'));
 }
 
 /**
