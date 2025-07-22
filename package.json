@@ -40,7 +40,7 @@
         "updateURL": "https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js",
         "downloadURL": "https://github.com/Avanatiker/Guesslytics/raw/main/guesslytics.user.js",
         "namespace": "https://github.com/Avanatiker/Guesslytics",
-        "match": "https://www.geoguessr.com/multiplayer",
+        "match": "https://www.geoguessr.com",
         "connect": "game-server.geoguessr.com",
         "grant": [
             "GM_xmlhttpRequest",

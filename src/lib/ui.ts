@@ -280,6 +280,7 @@ function createChartDatasets(data: RatingHistory, settings: Settings, canvas: HT
             fill: settings.showAreaFill,
             backgroundColor: gradient,
             tension: 0,
+            stepped: true,
             hidden: !settings.visibleDatasets[key as keyof typeof settings.visibleDatasets],
         };
     });
@@ -328,7 +329,7 @@ function createChartOptions(
     wasDragging: { value: boolean }
 ): ChartOptions {
     const chartOptions: ChartOptions = {
-        animation: false,
+        animation: true,
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'x', intersect: false },

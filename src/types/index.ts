@@ -92,6 +92,7 @@ export interface ChartDataset {
     fill: boolean;
     backgroundColor: any;
     tension: number;
+    stepped: boolean;
     hidden: boolean;
 }
 
