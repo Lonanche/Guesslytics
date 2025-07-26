@@ -329,7 +329,7 @@ function createChartOptions(
     wasDragging: { value: boolean }
 ): ChartOptions {
     const chartOptions: ChartOptions = {
-        animation: true,
+        animation: false,
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'x', intersect: false },
