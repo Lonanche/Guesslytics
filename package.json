@@ -1,6 +1,6 @@
 {
     "name": "guesslytics",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "type": "module",
     "description": "Tracks your GeoGuessr competitive duel ratings over time and displays it in a graph",
     "scripts": {
