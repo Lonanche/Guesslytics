@@ -230,6 +230,18 @@ export async function renderSettingsPanel(settings: Settings): Promise<void> {
         </div>`;
 
     document.getElementById('guesslyticsSettingsOverlay')!.onclick = () => (settingsPanel.style.display = 'none');
+    
+    // Add escape key listener to close settings panel
+    const handleKeyPress = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' && settingsPanel.style.display === 'block') {
+            settingsPanel.style.display = 'none';
+            document.removeEventListener('keydown', handleKeyPress);
+            // Remove focus from settings button
+            const settingsBtn = document.getElementById('guesslyticsSettingsBtn') as HTMLButtonElement;
+            if (settingsBtn) settingsBtn.blur();
+        }
+    };
+    document.addEventListener('keydown', handleKeyPress);
 
     // Dispatch a custom event to signal that the settings panel has been rendered.
     // This allows the main script to attach event handlers after the panel is in the DOM.
