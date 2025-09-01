@@ -109,9 +109,9 @@ export const css = `
     border-radius: 5px; 
     cursor: pointer; 
     color: white; 
-    width: 24px; 
-    height: 24px; 
-    padding: 0; 
+    width: 28px; 
+    height: 28px; 
+    padding: 2px; 
 }
 
 .chart-buttons button:hover { 
